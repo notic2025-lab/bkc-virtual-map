@@ -1023,6 +1023,9 @@ canvas.addEventListener('pointerup', (e) => {
   } else if (!$('shop-card').classList.contains('hidden')) {
     // 店情報カードを開いている状態で地図の何もない場所をタップ → 地図に戻る
     closeCard();
+  } else if (!routePanel.classList.contains('collapsed')) {
+    // 経路パネルが開いた状態で地図の何もない場所をタップ → パネルを畳んでマップをメインに
+    setRoutePanelCollapsed(true);
   }
 });
 
