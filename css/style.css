@@ -273,6 +273,60 @@ button, select, input, a { touch-action: manipulation; }
 }
 #route-info.hidden { display: none; }
 
+/* ---------- 3Dナビ（ポケモンGO風追従ビュー） ---------- */
+#btn-nav { grid-column: 1 / -1; min-height: 48px; }
+#nav-hud { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+#nav-hud.hidden { display: none; }
+#nav-banner {
+  position: absolute; top: calc(max(14px, env(safe-area-inset-top)) + 58px); left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel); backdrop-filter: blur(14px);
+  border: 1px solid rgba(56,189,248,.4); border-radius: 16px;
+  padding: 10px 20px; text-align: center; min-width: 190px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+#nav-dest { font-size: 14px; font-weight: 800; }
+#nav-remain { font-size: 12px; color: #7dd3fc; margin-top: 3px; font-weight: 700; }
+#nav-offroute {
+  position: absolute; top: calc(max(14px, env(safe-area-inset-top)) + 150px); left: 50%;
+  transform: translateX(-50%); white-space: nowrap;
+  background: rgba(127,29,29,.9); border: 1px solid rgba(248,113,113,.6);
+  color: #fecaca; border-radius: 999px; padding: 8px 16px;
+  font-size: 12.5px; font-weight: 700;
+  animation: toastIn .3s;
+}
+#nav-offroute.hidden { display: none; }
+#nav-exit {
+  position: absolute; right: 14px; top: calc(max(14px, env(safe-area-inset-top)) + 58px);
+  pointer-events: auto; background: rgba(18,26,42,.9); min-height: 44px;
+}
+#nav-joystick {
+  position: absolute; left: 50%; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 26px);
+  transform: translateX(-50%);
+  width: 132px; height: 132px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(13,22,38,.35), rgba(13,22,38,.72));
+  border: 2px solid rgba(125,211,252,.45);
+  pointer-events: auto; touch-action: none;
+  box-shadow: 0 8px 30px rgba(0,0,0,.4);
+}
+#nav-knob {
+  position: absolute; left: 50%; top: 50%;
+  width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #a5f3fc, #38bdf8 60%, #0284c7);
+  box-shadow: 0 4px 14px rgba(56,189,248,.5);
+}
+#nav-hint {
+  position: absolute; left: 50%; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 4px);
+  transform: translateX(-50%); white-space: nowrap;
+  color: #9fc7dd; font-size: 11px; text-shadow: 0 1px 4px #000;
+}
+/* ナビ中は探索UIを隠してマップに集中 */
+body.nav-active #quick-destination,
+body.nav-active #filters,
+body.nav-active #map-controls,
+body.nav-active #zoom-hint,
+body.nav-active #route-panel { display: none; }
+
 /* ---------- トースト ---------- */
 #toast {
   position: absolute; z-index: 60;
@@ -391,7 +445,8 @@ button, select, input, a { touch-action: manipulation; }
   .route-row select { min-height: 48px; padding: 11px 12px; font-size: 16px; }
   .route-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   .route-actions > * { min-height: 48px; padding: 10px 12px; font-size: 14px; }
-  #btn-ar { grid-column: 1 / -1; min-height: 56px; font-size: 16px; }
+  #btn-nav { grid-column: 1 / -1; min-height: 56px; font-size: 16px; }
+  #nav-hint { display: none; }
   #route-info { max-height: 86px; overflow-y: auto; }
   #shop-card {
     left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto;

@@ -94,12 +94,25 @@
       <select id="route-to"></select>
     </div>
     <div class="route-actions">
-      <button id="btn-ar" class="ar-btn ar-primary" disabled>📱 ARナビを開始</button>
-      <button id="btn-walk" class="ghost-btn">🚶 3Dで歩く</button>
+      <button id="btn-nav" class="ar-btn ar-primary" disabled>🧭 案内開始（3Dナビ）</button>
+      <button id="btn-ar" class="ar-btn" disabled>📱 ARナビ</button>
+      <button id="btn-walk" class="ghost-btn">🚶 自動で歩く</button>
       <button id="btn-clear" class="ghost-btn small">クリア</button>
     </div>
     <div id="route-info" class="hidden"></div>
     </div>
+  </div>
+
+  <!-- 3Dナビ（ポケモンGO風追従ビュー）HUD -->
+  <div id="nav-hud" class="hidden">
+    <div id="nav-banner">
+      <div id="nav-dest"></div>
+      <div id="nav-remain"></div>
+    </div>
+    <div id="nav-offroute" class="hidden">⚠ ルートから外れています</div>
+    <button id="nav-exit" class="chip-btn danger">✕ 終了</button>
+    <div id="nav-joystick"><div id="nav-knob"></div></div>
+    <div id="nav-hint">スティックで移動 ・ 画面ドラッグで見回し（PC: 矢印キー / WASD）</div>
   </div>
 
   <!-- トースト -->

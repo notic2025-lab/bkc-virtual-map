@@ -558,6 +558,7 @@ const avatar = new THREE.Group();
   hereLabel.position.y = 4.2;
   avatar.add(body, head, ring, hereLabel);
   avatar.userData.ring = ring;
+  avatar.userData.hereLabel = hereLabel;
 }
 scene.add(avatar);
 let avatarPlaceId = 'ent-north2';
@@ -636,6 +637,7 @@ function clearRoute() {
   routeObjects = []; routeArrows = []; routeDots = []; routeCurve = null; currentRoute = null;
   document.getElementById('route-info').classList.add('hidden');
   document.getElementById('btn-ar').disabled = true;
+  document.getElementById('btn-nav').disabled = true;
   document.getElementById('route-panel-title').textContent = '経路を検索';
 }
 
@@ -709,6 +711,7 @@ function showRoute(fromId, toId) {
   info.innerHTML = `<b>${esc(from.name)}</b> → <b>${esc(to.name)}</b><br>距離 約${lengthM}m ・ 徒歩 約${mins}分`;
   info.classList.remove('hidden');
   document.getElementById('btn-ar').disabled = false;
+  document.getElementById('btn-nav').disabled = false;
   document.getElementById('route-panel-title').textContent = `${to.name} への経路`;
 
   // 経路全体が見えるようにカメラ移動
@@ -828,7 +831,7 @@ function updateRouteFromSelections() {
 }
 $('route-from').addEventListener('change', updateRouteFromSelections);
 $('route-to').addEventListener('change', updateRouteFromSelections);
-$('btn-clear').addEventListener('click', () => { clearRoute(); stopWalk(); setRoutePanelCollapsed(false); });
+$('btn-clear').addEventListener('click', () => { exitNav(false); clearRoute(); stopWalk(); setRoutePanelCollapsed(false); });
 $('btn-walk').addEventListener('click', () => walking ? stopWalk() : startWalk());
 $('btn-ar').addEventListener('click', () => {
   if (!currentRoute) return;
@@ -984,7 +987,7 @@ function startGuidanceTo(shop) {
   closeCard();
   $('drawer').classList.remove('open');
   setRoutePanelCollapsed(false);
-  toast(`${shop.name} への経路を表示しました。ARナビも利用できます`);
+  toast(`${shop.name} への経路を表示しました。「案内開始」で歩いてみましょう 🧭`);
 }
 
 $('card-goto').addEventListener('click', () => {
@@ -998,6 +1001,194 @@ function focusShop(shop) {
 }
 
 // ------------------------------------------------------------
+// 3Dナビモード（ポケモンGO風：背後からの追従視点で自分で歩き、
+// 自分の位置がマップ上を動くことで道が合っているかを確かめられる）
+// ------------------------------------------------------------
+const NAV_SPEED = 5.2;        // 移動速度（ワールド単位/秒・体感優先）
+const NAV_OFFROUTE_DIST = 5;  // ルート逸脱とみなす距離（≈8m）
+const NAV_ARRIVE_DIST = 3.2;  // 到着とみなす距離
+let navMode = null; // { heading, headingOffset, zoom, samples, goal, len }
+
+// バーチャルジョイスティック（ポケモンGOのGPS移動の代わり）
+const navJoy = { active: false, x: 0, y: 0 };
+{
+  const stick = $('nav-joystick'), knob = $('nav-knob');
+  const R = 46;
+  let pid = null;
+  const setKnob = (x, y) => { knob.style.transform = `translate(${x * R}px, ${y * R}px)`; };
+  const move = (e) => {
+    const r = stick.getBoundingClientRect();
+    let dx = (e.clientX - (r.left + r.width / 2)) / R;
+    let dy = (e.clientY - (r.top + r.height / 2)) / R;
+    const m = Math.hypot(dx, dy);
+    if (m > 1) { dx /= m; dy /= m; }
+    navJoy.x = dx; navJoy.y = dy;
+    setKnob(dx, dy);
+  };
+  stick.addEventListener('pointerdown', (e) => {
+    pid = e.pointerId;
+    stick.setPointerCapture(pid);
+    navJoy.active = true;
+    move(e);
+  });
+  stick.addEventListener('pointermove', (e) => { if (e.pointerId === pid) move(e); });
+  const end = (e) => {
+    if (e.pointerId !== pid) return;
+    pid = null; navJoy.active = false; navJoy.x = navJoy.y = 0;
+    setKnob(0, 0);
+  };
+  stick.addEventListener('pointerup', end);
+  stick.addEventListener('pointercancel', end);
+}
+
+// PC用: 矢印キー / WASD
+const navKeys = new Set();
+addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  navKeys.add(k);
+  if (navMode && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
+  if (k === 'escape') exitNav(false);
+});
+addEventListener('keyup', (e) => navKeys.delete(e.key.toLowerCase()));
+
+// ナビ中の見回し（1本指ドラッグ=回転 / ピンチ=ズーム / ホイール=ズーム）
+const navPointers = new Map();
+canvas.addEventListener('pointerdown', (e) => { if (navMode) navPointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); });
+canvas.addEventListener('pointermove', (e) => {
+  if (!navMode || !navPointers.has(e.pointerId)) return;
+  const prev = navPointers.get(e.pointerId);
+  if (navPointers.size === 1) {
+    navMode.headingOffset -= (e.clientX - prev.x) * 0.007;
+  } else if (navPointers.size === 2) {
+    const other = [...navPointers.entries()].find(([id]) => id !== e.pointerId)?.[1];
+    if (other) {
+      const dPrev = Math.hypot(prev.x - other.x, prev.y - other.y);
+      const dNow = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+      if (dNow > 4) navMode.zoom = THREE.MathUtils.clamp(navMode.zoom * (dPrev / dNow), 6.5, 20);
+    }
+  }
+  navPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+});
+const navPointerEnd = (e) => navPointers.delete(e.pointerId);
+canvas.addEventListener('pointerup', navPointerEnd);
+canvas.addEventListener('pointercancel', navPointerEnd);
+canvas.addEventListener('wheel', (e) => {
+  if (!navMode) return;
+  e.preventDefault();
+  navMode.zoom = THREE.MathUtils.clamp(navMode.zoom * (1 + e.deltaY * 0.0012), 6.5, 20);
+}, { passive: false });
+
+function startNav() {
+  if (!routeCurve || !currentRoute) { toast('先に目的地を選んで経路を表示してください 🧭'); return; }
+  walking = null;
+  camTween = null;
+  controls.enabled = false;
+  const p0 = routeCurve.getPointAt(0);
+  const t0 = routeCurve.getTangentAt(0);
+  avatar.position.copy(p0).setY(0);
+  avatar.userData.hereLabel.visible = false; // 追従視点では自分の目印は不要
+  navMode = {
+    heading: Math.atan2(t0.x, t0.z),
+    headingOffset: 0,
+    zoom: 14,
+    samples: routeCurve.getSpacedPoints(160),
+    goal: routeCurve.getPointAt(1),
+    len: routeCurve.getLength(),
+  };
+  document.body.classList.add('nav-active');
+  $('nav-hud').classList.remove('hidden');
+  $('nav-offroute').classList.add('hidden');
+  $('nav-dest').textContent = `${getPoi(currentRoute.toId).name} へ案内中`;
+  setRoutePanelCollapsed(true);
+  closeCard();
+  $('drawer').classList.remove('open');
+  toast('案内開始！光る道に沿って歩いてみましょう 🚶', 3600);
+}
+
+function exitNav(arrived = false) {
+  if (!navMode) return;
+  navMode = null;
+  navPointers.clear();
+  navJoy.active = false; navJoy.x = navJoy.y = 0;
+  $('nav-knob').style.transform = 'translate(0px, 0px)';
+  document.body.classList.remove('nav-active');
+  $('nav-hud').classList.add('hidden');
+  avatar.userData.hereLabel.visible = true;
+  controls.enabled = true;
+  if (arrived) {
+    avatarPlaceId = currentRoute?.toId ?? avatarPlaceId;
+    syncFromSelect();
+    toast('目的地に到着しました！ 🎉');
+  }
+  const target = avatar.position.clone().setY(0);
+  flyTo(target.clone().add(new THREE.Vector3(0, 55, 42)), target, 1.1);
+  setRoutePanelCollapsed(false);
+}
+
+function updateNav(dt, t) {
+  // 入力（ジョイスティック優先、無ければキーボード）
+  let jx = navJoy.x, jy = navJoy.y;
+  if (!navJoy.active) {
+    jx = (navKeys.has('arrowright') || navKeys.has('d') ? 1 : 0) - (navKeys.has('arrowleft') || navKeys.has('a') ? 1 : 0);
+    jy = (navKeys.has('arrowdown') || navKeys.has('s') ? 1 : 0) - (navKeys.has('arrowup') || navKeys.has('w') ? 1 : 0);
+  }
+  const mag = Math.min(1, Math.hypot(jx, jy));
+  const moving = mag > 0.12;
+
+  if (moving) {
+    // 画面上方向＝カメラ前方として移動ベクトルを作る
+    const yaw = navMode.heading + navMode.headingOffset;
+    const f = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const r = new THREE.Vector3(-f.z, 0, f.x);
+    const dir = f.multiplyScalar(-jy).add(r.multiplyScalar(jx)).normalize();
+    avatar.position.addScaledVector(dir, NAV_SPEED * mag * dt);
+    avatar.position.x = THREE.MathUtils.clamp(avatar.position.x, -MAP_W / 2 + 2, MAP_W / 2 - 2);
+    avatar.position.z = THREE.MathUtils.clamp(avatar.position.z, -MAP_D / 2 + 2, MAP_D / 2 - 2);
+    // 進行方向へ滑らかに旋回し、手動の見回しは背後へ戻していく
+    let dh = Math.atan2(dir.x, dir.z) - navMode.heading;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    navMode.heading += dh * Math.min(1, dt * 6);
+    if (!navPointers.size) navMode.headingOffset *= Math.pow(0.12, dt);
+    avatar.position.y = Math.abs(Math.sin(t * 10)) * 0.22; // 歩く弾み
+  } else {
+    avatar.position.y = 0;
+  }
+  avatar.rotation.y = navMode.heading;
+
+  // 追従カメラ（アバターを画面下寄りに置く三人称視点）
+  const yaw = navMode.heading + navMode.headingOffset;
+  const camF = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  const camPos = avatar.position.clone().addScaledVector(camF, -navMode.zoom * 0.8)
+    .add(new THREE.Vector3(0, navMode.zoom * 0.78, 0));
+  const camTgt = avatar.position.clone().addScaledVector(camF, navMode.zoom * 0.42).setY(1.2);
+  const k = 1 - Math.pow(0.001, dt);
+  camera.position.lerp(camPos, k);
+  controls.target.lerp(camTgt, k);
+  camera.lookAt(controls.target);
+
+  // ルート進捗・逸脱チェック
+  const s = navMode.samples;
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < s.length; i++) {
+    const dx = s[i].x - avatar.position.x, dz = s[i].z - avatar.position.z;
+    const d = dx * dx + dz * dz;
+    if (d < bd) { bd = d; bi = i; }
+  }
+  const remainM = Math.max(0, Math.round((1 - bi / (s.length - 1)) * navMode.len * METER_PER_UNIT));
+  const remainText = `目的地まで 約${remainM}m`;
+  const remainEl = $('nav-remain');
+  if (remainEl.textContent !== remainText) remainEl.textContent = remainText;
+  $('nav-offroute').classList.toggle('hidden', Math.sqrt(bd) < NAV_OFFROUTE_DIST);
+
+  // 到着判定
+  const g = navMode.goal;
+  if (Math.hypot(g.x - avatar.position.x, g.z - avatar.position.z) < NAV_ARRIVE_DIST) exitNav(true);
+}
+
+$('btn-nav').addEventListener('click', () => navMode ? exitNav(false) : startNav());
+$('nav-exit').addEventListener('click', () => exitNav(false));
+
+// ------------------------------------------------------------
 // ピッキング（クリック/タップでお店を選択）
 // ------------------------------------------------------------
 const raycaster = new THREE.Raycaster();
@@ -1006,6 +1197,7 @@ let downAt = null;
 canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
 canvas.addEventListener('pointercancel', () => { downAt = null; });
 canvas.addEventListener('pointerup', (e) => {
+  if (navMode) { downAt = null; return; } // ナビ中はドラッグ見回しに専念
   if (!downAt) return;
   const dx = e.clientX - downAt[0], dy = e.clientY - downAt[1];
   downAt = null;
@@ -1063,9 +1255,16 @@ function animate() {
     const on = s._categoryVisible;
     const selected = cardShop === s || hovered === s._mesh;
     s._label.visible = on;
-    const labelScale = selected ? 1.1 : detailView ? 1 : areaView ? 0.72 : 0.5;
+    let labelScale = selected ? 1.1 : detailView ? 1 : areaView ? 0.72 : 0.5;
+    let labelOpacity = selected ? 1 : detailView ? 1 : areaView ? 0.92 : 0.78;
+    if (navMode) {
+      // 追従視点では至近距離のラベルが画面を塞ぐため、近づくほどフェードアウト
+      const dAv = s._pos.distanceTo(avatar.position);
+      labelScale = 0.6;
+      labelOpacity = dAv < 10 ? Math.max(0, (dAv - 4) / 6) * 0.9 : 0.9;
+    }
     s._label.scale.copy(s._label.userData.detailScale).multiplyScalar(labelScale);
-    s._label.material.opacity = selected ? 1 : detailView ? 1 : areaView ? 0.92 : 0.78;
+    s._label.material.opacity = labelOpacity;
     s._edges.visible = on;
     s._edges.material.opacity = selected ? 1 : detailView ? 0.8 : areaView ? 0.48 : 0.24;
     s._crown.visible = on && (selected || detailView || areaView);
@@ -1113,7 +1312,9 @@ function animate() {
 
   // アバター
   avatar.userData.ring.rotation.z = t * 1.5;
-  if (walking && routeCurve) {
+  if (navMode && routeCurve) {
+    updateNav(dt, t);
+  } else if (walking && routeCurve) {
     walking.t += dt;
     const u = Math.min(1, walking.t / walking.dur);
     const p = routeCurve.getPointAt(u);
@@ -1132,7 +1333,7 @@ function animate() {
   }
 
   // カメラトゥイーン
-  if (camTween && !walking) {
+  if (camTween && !walking && !navMode) {
     camTween.t += dt;
     const k = Math.min(1, camTween.t / camTween.dur);
     const e = 1 - Math.pow(1 - k, 3);
