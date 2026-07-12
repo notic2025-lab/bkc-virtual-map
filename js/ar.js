@@ -44,9 +44,9 @@ function turnLabel(prev, cur) {
   while (d < -Math.PI) d += Math.PI * 2;
   const deg = THREE.MathUtils.radToDeg(d);
   if (Math.abs(deg) < 25) return 'そのまま直進';
-  if (deg >= 25 && deg < 120) return '右方向へ ↱';
-  if (deg <= -25 && deg > -120) return '左方向へ ↰';
-  return '後ろへ折り返し ↶';
+  if (deg >= 25 && deg < 120) return '右方向へ進みます';
+  if (deg <= -25 && deg > -120) return '左方向へ進みます';
+  return '後ろへ折り返します';
 }
 
 export async function startAR(currentRoute, getPoi, mpu) {
@@ -168,7 +168,7 @@ function updateLegUI() {
   const isLast = legIndex === legs.length - 1;
 
   $('ar-instruction').textContent = isLast
-    ? `🏁 まもなく「${goal.name}」に到着（約${distM}m）`
+    ? `まもなく「${goal.name}」に到着（約${distM}m）`
     : `${turnLabel(prev, leg)} — 約${distM}m進む`;
   $('ar-distance').textContent =
     `区間 ${legIndex + 1} / ${legs.length}　目的地: ${goal.name}`;
@@ -225,7 +225,7 @@ function updateTurnIndicator(rel) {
     return;
   }
   const deg = THREE.MathUtils.radToDeg(rel);
-  // '➤'(右向き基準)を、rel=0で上・右で右・背後で下 を指すよう回転
+  // 自作ターンアイコンを、rel=0で上・右で右・背後で下を指すよう回転
   arrow.style.transform = `rotate(${deg - 90}deg)`;
   let msg;
   if (Math.abs(deg) >= 135) msg = '後ろを向いてください';

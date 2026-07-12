@@ -4,8 +4,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import {
-  MAP_W, MAP_D, toWorld, gpsToWorld, CATEGORIES, SHOPS, PLACES, DECOR, FACILITIES,
-  NAV_NODES, NAV_EDGES, ENTRY_NODE,
+  MAP_W, MAP_D, toWorld, gpsToWorld, CATEGORIES, SHOPS, PLACES, DECOR,
+  FLOORS, FLOOR_ORDER, FLOOR_LINKS,
 } from './data.js';
 import { startAR } from './ar.js';
 
@@ -131,13 +131,14 @@ function refreshEnvironment() {
 refreshEnvironment();
 
 // ------------------------------------------------------------
-// 地面（公式フロアマップをそのまま基準図として使用）
+// フロア（B1F/1F/2Fを縦に積層。公式フロアマップをそのまま基準図として使用）
+//   表示中フロアはフル表示、他フロアは公式図がうっすら透けて見える
 // ------------------------------------------------------------
-function makeGroundTexture() {
+function makeGroundTexture(src) {
   // CanvasTextureは一部のスマホGPUで更新時に黒い帯が出るため、
   // power-of-two化したJPEGをGPUへ一度だけ直接転送する。
   const tex = new THREE.TextureLoader().load(
-    'assets/north1f-floor-1024.jpg',
+    src,
     undefined,
     undefined,
     () => toast('公式フロアマップ画像を読み込めませんでした'),
@@ -151,38 +152,44 @@ function makeGroundTexture() {
   return tex;
 }
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(MAP_W, MAP_D),
-  new THREE.MeshBasicMaterial({
-    map: makeGroundTexture(),
-    // 台座など下層メッシュとのZ-fighting（回転時に黒くチラつく現象）を防ぐため、
-    // フロアマップは常に手前へ描画されるよう深度バイアスを掛ける。
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
-  })
-);
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = 0.02; // 下層メッシュより確実に上へ
-ground.receiveShadow = true;
-ground.renderOrder = 1;
-scene.add(ground);
+const GHOST_GROUND_OPACITY = 0.16; // 非表示フロアの透け具合
+const floorVisuals = {}; // fid -> { ground, frame }
+for (const fid of FLOOR_ORDER) {
+  const fl = FLOORS[fid];
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(MAP_W, MAP_D),
+    new THREE.MeshBasicMaterial({
+      map: makeGroundTexture(fl.map),
+      transparent: true,
+      // 台座など下層メッシュとのZ-fighting防止の深度バイアス
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = fl.y + 0.02;
+  ground.receiveShadow = true;
+  ground.renderOrder = 1;
+  scene.add(ground);
 
-// フロア全体を浮遊するデジタルツインのように見せる発光フレーム
-const framePoints = [
-  new THREE.Vector3(-MAP_W / 2, 0.22, -MAP_D / 2),
-  new THREE.Vector3(MAP_W / 2, 0.22, -MAP_D / 2),
-  new THREE.Vector3(MAP_W / 2, 0.22, MAP_D / 2),
-  new THREE.Vector3(-MAP_W / 2, 0.22, MAP_D / 2),
-];
-const mapFrame = new THREE.LineLoop(
-  new THREE.BufferGeometry().setFromPoints(framePoints),
-  new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.72 })
-);
-mapFrame.renderOrder = 4;
-scene.add(mapFrame);
+  // フロアを浮遊するデジタルツインのように見せる発光フレーム
+  const framePoints = [
+    new THREE.Vector3(-MAP_W / 2, fl.y + 0.22, -MAP_D / 2),
+    new THREE.Vector3(MAP_W / 2, fl.y + 0.22, -MAP_D / 2),
+    new THREE.Vector3(MAP_W / 2, fl.y + 0.22, MAP_D / 2),
+    new THREE.Vector3(-MAP_W / 2, fl.y + 0.22, MAP_D / 2),
+  ];
+  const frame = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(framePoints),
+    new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.72 })
+  );
+  frame.renderOrder = 4;
+  scene.add(frame);
+  floorVisuals[fid] = { ground, frame };
+}
 
-// 外周ベース（台座）: 上面をフロアマップ(y=0)より十分下げ、同一平面のZ-fightingを排除
+// 外周ベース（台座）: 最下層フロアの下に置く
 const base = new THREE.Mesh(
   new THREE.BoxGeometry(MAP_W + 6, 3, MAP_D + 6),
   new THREE.MeshStandardMaterial({
@@ -190,7 +197,7 @@ const base = new THREE.Mesh(
     roughness: 0.62, metalness: 0.28,
   })
 );
-base.position.y = -2.4; // 上面 = -0.9（地面より0.9下）
+base.position.y = FLOORS[FLOOR_ORDER[0]].y - 2.4;
 scene.add(base);
 
 // ------------------------------------------------------------
@@ -248,6 +255,7 @@ const GLASS_OPACITY = 0.32;
 
 for (const shop of SHOPS) {
   const { x, z } = toWorld(shop.pin.left, shop.pin.top);
+  const fy = FLOORS[shop.floor].y;
   const col = CATEGORIES[shop.cat].color;
   // 区画（w×d）と位置は公式座標。半透明ガラスとして立体化し、公式平面図が
   // 透けて見えるようにすることで没入感と情報の正確さを両立する。
@@ -260,7 +268,7 @@ for (const shop of SHOPS) {
     envMapIntensity: 1.1, depthWrite: false,
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, 0, z);
+  mesh.position.set(x, fy, z);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.userData = { type: 'shop', shop };
@@ -272,7 +280,7 @@ for (const shop of SHOPS) {
     new THREE.EdgesGeometry(new THREE.BoxGeometry(shop.size.w, h, shop.size.d)),
     new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9 })
   );
-  edges.position.set(x, h / 2, z);
+  edges.position.set(x, fy + h / 2, z);
   edges.renderOrder = 5;
   shopGroup.add(edges);
 
@@ -284,12 +292,12 @@ for (const shop of SHOPS) {
       roughness: 0.3, metalness: 0.25, envMapIntensity: 1.1,
     })
   );
-  crown.position.set(x, h, z);
+  crown.position.set(x, fy + h, z);
   crown.castShadow = true;
   shopGroup.add(crown);
 
   // ラベル
-  const labelY = h + 3.0;
+  const labelY = fy + h + 3.0;
   const label = makeLabelSprite(shop.name.length > 14 ? shop.en : shop.name, { border: CATEGORIES[shop.cat].css });
   label.position.set(x, labelY, z);
   label.userData = {
@@ -303,7 +311,7 @@ for (const shop of SHOPS) {
   shop._crown = crown;
   shop._label = label;
   shop._categoryVisible = true;
-  shop._pos = new THREE.Vector3(x, 0, z);
+  shop._pos = new THREE.Vector3(x, fy, z);
 }
 
 // 装飾建物
@@ -539,8 +547,13 @@ for (const f of []) {
   facilityGroup.add(g);
 }
 
-// 経路探索に使う各PLACEのワールド座標を確定
-PLACES.forEach(p => { if (!p._pos) { const { x, z } = toWorld(p.pin.left, p.pin.top); p._pos = new THREE.Vector3(x, 0, z); } });
+// 経路探索に使う各PLACEのワールド座標を確定（フロア高さ込み）
+PLACES.forEach(p => {
+  if (!p._pos) {
+    const { x, z } = toWorld(p.pin.left, p.pin.top);
+    p._pos = new THREE.Vector3(x, FLOORS[p.floor].y, z);
+  }
+});
 
 // ------------------------------------------------------------
 // アバター
@@ -565,17 +578,41 @@ let avatarPlaceId = 'ent-north2';
 avatar.position.copy(PLACES.find(p => p.id === 'ent-north2')._pos);
 
 // ------------------------------------------------------------
-// 経路探索 (A*)
+// フロア状態
+//   viewFloor = 表示中フロア / userFloor = 自分がいるフロア
+//   （屋内GPSはフロアを判別できないため、フロアチップ＝自己申告。
+//     ナビ中のフロア移動・到着では自動更新される）
+// ------------------------------------------------------------
+let viewFloor = '1f';
+let userFloor = '1f';
+let navMode = null; // ナビモード状態（ナビ節で使用。setViewFloorが参照するためここで宣言）
+const floorY = (fid = userFloor) => FLOORS[fid].y;
+
+// ------------------------------------------------------------
+// 経路探索 (A*) — 全フロアを1つのグラフに接続（ノードキー: "floor:id"）
 // ------------------------------------------------------------
 const nodePos = {};
-for (const [id, p] of Object.entries(NAV_NODES)) {
-  const { x, z } = toWorld(p.left, p.top);
-  nodePos[id] = new THREE.Vector3(x, 0, z);
-}
 const adj = {};
-for (const [a, b] of NAV_EDGES) {
-  (adj[a] ??= []).push(b);
-  (adj[b] ??= []).push(a);
+const addEdge = (a, b) => { (adj[a] ??= []).push(b); (adj[b] ??= []).push(a); };
+for (const fid of FLOOR_ORDER) {
+  const fl = FLOORS[fid];
+  for (const [id, p] of Object.entries(fl.navNodes)) {
+    const { x, z } = toWorld(p.left, p.top);
+    nodePos[`${fid}:${id}`] = new THREE.Vector3(x, fl.y, z);
+  }
+  for (const [a, b] of fl.navEdges) addEdge(`${fid}:${a}`, `${fid}:${b}`);
+}
+// フロア間リンク（エレベーター/エスカレーター）。乗換名は経路案内文に使う
+const transferName = {};
+for (const lk of FLOOR_LINKS) {
+  const keys = Object.entries(lk.nodes).map(([f, n]) => `${f}:${n}`);
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      addEdge(keys[i], keys[j]);
+      transferName[`${keys[i]}|${keys[j]}`] = lk.name;
+      transferName[`${keys[j]}|${keys[i]}`] = lk.name;
+    }
+  }
 }
 
 function astar(startId, goalId) {
@@ -608,124 +645,192 @@ function getPoi(id) {
   return SHOPS.find(s => s.id === id) || PLACES.find(p => p.id === id);
 }
 
-// 最寄りの通路ノード（任意のワールド座標＝GPS現在地から経路探索するため）
-function nearestNode(pos) {
+// 最寄りの通路ノード（指定フロア内・任意のワールド座標＝GPS現在地から経路探索するため）
+function nearestNode(pos, fid) {
   let best = null, bd = Infinity;
+  const prefix = `${fid}:`;
   for (const [id, p] of Object.entries(nodePos)) {
+    if (!id.startsWith(prefix)) continue;
     const d = (p.x - pos.x) ** 2 + (p.z - pos.z) ** 2;
     if (d < bd) { bd = d; best = id; }
   }
   return best;
 }
 
-// 現在地（ワールド座標）→ 目的地POI の経路座標列
-function buildRoutePoints(startPos, toId) {
+// 現在地（ワールド座標＋フロア）→ 目的地POI の経路。フロアごとのレッグ配列を返す
+// leg = { floor, points:[Vector3], via: 乗換名|null（このレッグへ移る手段） }
+function buildRouteLegs(startPos, startFloor, toId) {
   const to = getPoi(toId);
   if (!to) return null;
-  const nodePath = astar(nearestNode(startPos), ENTRY_NODE[toId]);
+  const nodePath = astar(nearestNode(startPos, startFloor), `${to.floor}:${to.entry}`);
   if (!nodePath) return null;
-  const pts = [startPos.clone().setY(0)];
-  for (const n of nodePath) pts.push(nodePos[n].clone());
-  pts.push(to._pos.clone());
-  // 連続する近接点を除去
-  const clean = [pts[0]];
-  for (const p of pts) if (p.distanceTo(clean[clean.length - 1]) > 1.5) clean.push(p);
-  return clean;
+
+  const legs = [];
+  let cur = { floor: startFloor, points: [startPos.clone().setY(FLOORS[startFloor].y)], via: null };
+  let prevKey = null;
+  for (const key of nodePath) {
+    const f = key.split(':')[0];
+    if (f !== cur.floor) {
+      legs.push(cur);
+      cur = {
+        floor: f,
+        points: [nodePos[key].clone()],
+        via: (prevKey && transferName[`${prevKey}|${key}`]) || 'エレベーター',
+      };
+    } else {
+      cur.points.push(nodePos[key].clone());
+    }
+    prevKey = key;
+  }
+  cur.points.push(to._pos.clone());
+  legs.push(cur);
+
+  // 各レッグ内の連続する近接点を除去
+  for (const leg of legs) {
+    const clean = [leg.points[0]];
+    for (const p of leg.points) if (p.distanceTo(clean[clean.length - 1]) > 1.5) clean.push(p);
+    if (clean.length < 2 && leg.points.length >= 2) clean.push(leg.points[leg.points.length - 1]);
+    leg.points = clean;
+  }
+  return legs.filter(l => l.points.length >= 2);
 }
 
 // ------------------------------------------------------------
-// 経路の描画
+// 経路の描画（フロアごとのレッグ＋フロア間の乗換ビーム）
 // ------------------------------------------------------------
 let routeObjects = [];
-let routeCurve = null;
+let routeCurve = null;   // 進行中レッグのカーブ
 let routeArrows = [];
 let routeDots = [];
-let currentRoute = null; // { fromId, toId, points, lengthM }
+let activeLegIndex = 0;
+let currentRoute = null; // { toId, legs, curves, lengthM }
+
+function setActiveLeg(i) {
+  activeLegIndex = i;
+  routeCurve = currentRoute?.curves[i] ?? null;
+}
 
 function clearRoute() {
   for (const o of routeObjects) { scene.remove(o); o.geometry?.dispose(); o.material?.dispose(); }
   routeObjects = []; routeArrows = []; routeDots = []; routeCurve = null; currentRoute = null;
+  activeLegIndex = 0;
   document.getElementById('route-info').classList.add('hidden');
   document.getElementById('btn-ar').disabled = true;
   document.getElementById('route-panel-title').textContent = '経路を検索';
   document.getElementById('route-panel').classList.add('no-route');
+  document.body.classList.remove('route-active');
 }
 
 function showRoute(toId, { fly = true } = {}) {
   clearRoute();
-  const points = buildRoutePoints(avatar.position, toId);
-  if (!points || points.length < 2) { toast('経路が見つかりませんでした'); return false; }
+  const legs = buildRouteLegs(avatar.position, userFloor, toId);
+  if (!legs || !legs.length) { toast('経路が見つかりませんでした'); return false; }
 
-  const lifted = points.map(p => p.clone().setY(0.62));
-  routeCurve = new THREE.CatmullRomCurve3(lifted, false, 'centripetal', 0.15);
-  const len = routeCurve.getLength();
+  const curves = [];
+  let totalLen = 0;
+  for (const leg of legs) {
+    const lifted = leg.points.map(p => p.clone().setY(FLOORS[leg.floor].y + 0.62));
+    const curve = new THREE.CatmullRomCurve3(lifted, false, 'centripetal', 0.15);
+    curves.push(curve);
+    const len = curve.getLength();
+    totalLen += len;
 
-  // 点線の土台。公式図を隠さない細いガイドだけ残す。
-  const routeOutline = new THREE.Mesh(
-    new THREE.TubeGeometry(routeCurve, Math.max(40, points.length * 12), 0.34, 8, false),
-    new THREE.MeshBasicMaterial({ color: 0x07506c, transparent: true, opacity: 0.38, depthTest: false })
-  );
-  routeOutline.renderOrder = 18;
-  scene.add(routeOutline); routeObjects.push(routeOutline);
-
-  // 発光する点を流し、経路と進行方向を同時に伝える
-  const dotCount = Math.max(10, Math.floor(len / 2.6));
-  for (let i = 0; i < dotCount; i++) {
-    const dot = new THREE.Mesh(
-      new THREE.SphereGeometry(i % 4 === 0 ? 0.46 : 0.32, 10, 8),
-      new THREE.MeshBasicMaterial({ color: i % 4 === 0 ? 0xffffff : 0x22d3ee, depthTest: false })
+    // 点線の土台。公式図を隠さない細いガイドだけ残す。
+    const outline = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, Math.max(40, leg.points.length * 12), 0.34, 8, false),
+      new THREE.MeshBasicMaterial({ color: 0x07506c, transparent: true, opacity: 0.38, depthTest: false })
     );
-    dot.userData.offset = i / dotCount;
-    dot.renderOrder = 19;
-    scene.add(dot); routeObjects.push(dot); routeDots.push(dot);
+    outline.renderOrder = 18;
+    scene.add(outline); routeObjects.push(outline);
+
+    // 発光する点を流し、経路と進行方向を同時に伝える
+    const dotCount = Math.max(8, Math.floor(len / 2.6));
+    for (let i = 0; i < dotCount; i++) {
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(i % 4 === 0 ? 0.46 : 0.32, 10, 8),
+        new THREE.MeshBasicMaterial({ color: i % 4 === 0 ? 0xffffff : 0x22d3ee, depthTest: false })
+      );
+      dot.userData.offset = i / dotCount;
+      dot.userData.curve = curve;
+      dot.userData.baseY = FLOORS[leg.floor].y;
+      dot.renderOrder = 19;
+      scene.add(dot); routeObjects.push(dot); routeDots.push(dot);
+    }
+
+    // 進行方向シェブロン（動く矢印）
+    const coneGeo = new THREE.ConeGeometry(0.7, 1.65, 8);
+    coneGeo.rotateX(Math.PI / 2);
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
+    const n = Math.max(3, Math.floor(len / 12));
+    for (let i = 0; i < n; i++) {
+      const cone = new THREE.Mesh(coneGeo, coneMat);
+      cone.userData.offset = i / n;
+      cone.userData.curve = curve;
+      cone.userData.baseY = FLOORS[leg.floor].y;
+      cone.renderOrder = 20;
+      scene.add(cone);
+      routeObjects.push(cone); routeArrows.push(cone);
+    }
   }
 
-  // 進行方向シェブロン（動く矢印）
-  const coneGeo = new THREE.ConeGeometry(0.7, 1.65, 8);
-  coneGeo.rotateX(Math.PI / 2);
-  const coneMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
-  const n = Math.max(4, Math.floor(len / 12));
-  for (let i = 0; i < n; i++) {
-    const cone = new THREE.Mesh(coneGeo, coneMat);
-    cone.userData.offset = i / n;
-    cone.renderOrder = 20;
-    scene.add(cone);
-    routeObjects.push(cone); routeArrows.push(cone);
+  // フロア間の乗換ビーム（エレベーター/エスカレーターの縦動線を可視化）
+  for (let i = 1; i < legs.length; i++) {
+    const from = legs[i - 1], toLeg = legs[i];
+    const p = toLeg.points[0];
+    const y1 = FLOORS[from.floor].y, y2 = FLOORS[toLeg.floor].y;
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.1, 1.1, Math.abs(y2 - y1), 20, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthTest: false })
+    );
+    beam.position.set(p.x, (y1 + y2) / 2, p.z);
+    beam.renderOrder = 17;
+    scene.add(beam); routeObjects.push(beam);
+    for (const yy of [y1, y2]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.13, 10, 36), new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false }));
+      ring.rotation.x = Math.PI / 2; ring.position.set(p.x, yy + 0.3, p.z); ring.renderOrder = 17;
+      scene.add(ring); routeObjects.push(ring);
+    }
   }
 
   // ゴールのビーコン（スタート＝現在地はアバター自身が示すため不要）
-  const mkBeacon = (pos, color) => {
+  const lastLeg = legs[legs.length - 1];
+  const goalPos = lastLeg.points[lastLeg.points.length - 1];
+  {
     const g = new THREE.Group();
     const pillar = new THREE.Mesh(
       new THREE.CylinderGeometry(0.5, 0.5, 14, 16, 1, true),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+      new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
     );
     pillar.position.y = 7;
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.14, 10, 40), new THREE.MeshBasicMaterial({ color }));
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.14, 10, 40), new THREE.MeshBasicMaterial({ color: 0xf472b6 }));
     ring.rotation.x = Math.PI / 2; ring.position.y = 0.2;
     g.add(pillar, ring);
-    g.position.copy(pos);
-    g.userData.ring = ring;
+    g.position.copy(goalPos);
     scene.add(g); routeObjects.push(g);
-    return g;
-  };
-  mkBeacon(points[points.length - 1], 0xf472b6);
+  }
 
-  const lengthM = Math.round(len * METER_PER_UNIT);
-  currentRoute = { toId, points, lengthM };
+  const transfers = legs.slice(1).map(l => l.via);
+  const lengthM = Math.round(totalLen * METER_PER_UNIT) + transfers.length * 15; // 乗換1回 ≈ +15m
+  currentRoute = { toId, legs, curves, lengthM };
+  setActiveLeg(0);
 
   const to = getPoi(toId);
   const info = document.getElementById('route-info');
   const mins = Math.max(1, Math.round(lengthM / 67)); // 徒歩 約4km/h
-  info.innerHTML = `<b>現在地</b> → <b>${esc(to.name)}</b><br>距離 約${lengthM}m ・ 徒歩 約${mins}分`;
+  const transferHtml = transfers.length
+    ? `<br><span class="route-transfer">↕ ${esc(transfers.join(' → '))} で ${esc(FLOORS[to.floor].short)} へ</span>`
+    : '';
+  info.innerHTML = `<b>現在地（${esc(FLOORS[userFloor].short)}）</b> → <b>${esc(to.name)}（${esc(FLOORS[to.floor].short)}）</b><br>距離 約${lengthM}m ・ 徒歩 約${mins}分${transferHtml}`;
   info.classList.remove('hidden');
   document.getElementById('btn-ar').disabled = false;
   document.getElementById('route-panel-title').textContent = `${to.name} への経路`;
   document.getElementById('route-panel').classList.remove('no-route');
+  document.body.classList.add('route-active');
 
   if (fly && !navMode) {
-    // 経路全体が見えるようにカメラ移動
-    const box = new THREE.Box3().setFromPoints(points);
+    // 出発フロアを表示し、最初のレッグ全体が見えるようにカメラ移動
+    setViewFloor(userFloor);
+    const box = new THREE.Box3().setFromPoints(legs[0].points);
     const center = box.getCenter(new THREE.Vector3());
     flyTo(center.clone().add(new THREE.Vector3(0, 60, 46)), center);
   }
@@ -748,6 +853,10 @@ function flyTo(camPos, target, dur = 1.4) {
 // UI
 // ------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
+function setControlIcon(id, icon, label) {
+  const el = $(id);
+  el.innerHTML = `<svg aria-hidden="true"><use href="#i-${icon}"/></svg><span>${label}</span>`;
+}
 function esc(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 let toastTimer = null;
@@ -758,6 +867,37 @@ function toast(msg, ms = 2600) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add('hidden'), ms);
 }
+
+// ------------------------------------------------------------
+// フロア切替
+// ------------------------------------------------------------
+function setViewFloor(fid, { alsoUser = false } = {}) {
+  viewFloor = fid;
+  if (alsoUser) userFloor = fid;
+  for (const f of FLOOR_ORDER) {
+    const active = f === fid;
+    floorVisuals[f].ground.material.opacity = active ? 1 : GHOST_GROUND_OPACITY;
+    floorVisuals[f].frame.material.opacity = active ? 0.72 : 0.1;
+  }
+  avatar.visible = userFloor === viewFloor;
+  if (alsoUser && !navMode) avatar.position.y = floorY();
+  document.querySelectorAll('#floor-switcher .floor-chip')
+    .forEach(b => b.classList.toggle('active', b.dataset.floor === fid));
+}
+
+document.querySelectorAll('#floor-switcher .floor-chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const fid = btn.dataset.floor;
+    if (fid === viewFloor) return;
+    if (navMode) { setViewFloor(fid); return; } // ナビ中は表示のみ切替（自動で戻る）
+    setViewFloor(fid, { alsoUser: true });
+    toast(`${FLOORS[fid].label} を表示中`);
+    // ルート表示中にフロアを移動した場合は現在地から引き直す
+    if (currentRoute) showRoute(currentRoute.toId, { fly: false });
+  });
+});
+
+setViewFloor('1f', { alsoUser: true }); // 初期表示は1F
 
 const routePanel = $('route-panel');
 const routePanelToggle = $('route-panel-toggle');
@@ -786,8 +926,13 @@ $('btn-north').addEventListener('click', () => {
 $('btn-clear').addEventListener('click', () => { exitNav(false); clearRoute(); });
 $('btn-ar').addEventListener('click', () => {
   if (!currentRoute) return;
-  startAR(currentRoute, getPoi, METER_PER_UNIT);
+  startAR(arRouteLeg(), getPoi, METER_PER_UNIT);
 });
+// AR は進行中レッグ（現在のフロア区間）を案内する
+function arRouteLeg() {
+  const leg = currentRoute.legs[activeLegIndex];
+  return { toId: currentRoute.toId, points: leg.points, lengthM: currentRoute.lengthM };
+}
 
 // ドロワー
 $('btn-list').addEventListener('click', () => $('drawer').classList.toggle('open'));
@@ -820,6 +965,16 @@ const SEARCH_ALIASES = {
   yondoshi: 'ヨンドシー 4度 ジュエリー', 'zara-home': 'ザラホーム 雑貨',
   'il-ghiottone': 'イルギオットーネ イタリアン', tullys: 'タリーズ コーヒー カフェ',
   soholm: 'スーホルム カフェ', actus: 'アクタス 家具 インテリア',
+  muji: 'むじるしりょうひん 無印良品 雑貨', zoff: 'ゾフ めがね', rayban: 'レイバン サングラス',
+  'seven-eleven': 'セブンイレブン コンビニ', cocokara: '薬局 ドラッグストア くすり',
+  'world-beer': 'ビール 居酒屋', 'world-wine': 'ワイン', subway: 'サブウェイ サンドイッチ',
+  'suntory-whisky-house': 'サントリー ウイスキー バー', 'au-style': 'エーユー 携帯 スマホ',
+  softbank: 'ソフトバンク ワイモバイル 携帯 スマホ', iori: 'いおり 今治タオル',
+  samsonite: 'サムソナイト スーツケース', 'sense-of-place': 'アーバンリサーチ',
+  'seiko-boutique': 'セイコー 時計', 'lables-one': '美容室 ヘアサロン まつげ',
+  icure: '接骨院 マッサージ 鍼灸', eyecity: 'アイシティ コンタクト',
+  'orix-rentacar': 'オリックス レンタカー', hakuyosya: 'はくようしゃ クリーニング',
+  'mitsui-atm': '銀行 エーティーエム', 'umekita-ganka': '眼科 めがね処方',
 };
 
 function searchScore(shop, query) {
@@ -862,7 +1017,7 @@ function renderShopList(filter = '', cat = 'all') {
     div.className = 'shop-item';
     div.innerHTML = `
       <img class="thumb" src="${s.logo}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
-      <div class="meta"><b>${esc(s.name)}</b><span>${esc(s.tag)}</span></div>
+      <div class="meta"><b>${esc(s.name)}</b><span><i class="floor-badge">${esc(FLOORS[s.floor].short)}</i>${esc(s.tag)}</span></div>
       <button class="shop-info-btn" type="button" title="店舗情報">ⓘ</button>`;
     // 行タップ1回で経路案内まで直行（店舗情報はⓘから）
     div.addEventListener('click', (event) => {
@@ -907,6 +1062,7 @@ document.querySelectorAll('.filter-chip').forEach(btn => {
 // ショップカード
 let cardShop = null;
 function openCard(shop) {
+  if (document.body.classList.contains('nav-active')) return;
   cardShop = shop;
   $('card-logo-img').src = shop.logo;
   $('card-tag').textContent = shop.tag;
@@ -917,11 +1073,13 @@ function openCard(shop) {
   $('card-desc').textContent = shop.desc;
   $('card-link').href = shop.url;
   $('shop-card').classList.remove('hidden');
+  document.body.classList.add('detail-active');
   routePanel.classList.add('card-covered');
   $('map-controls').classList.add('hidden');
 }
 function closeCard() {
   $('shop-card').classList.add('hidden');
+  document.body.classList.remove('detail-active');
   routePanel.classList.remove('card-covered');
   $('map-controls').classList.remove('hidden');
 }
@@ -936,7 +1094,7 @@ function startGuidanceTo(shop) {
   closeCard();
   $('drawer').classList.remove('open');
   setRoutePanelCollapsed(false);
-  toast(`${shop.name} への最短経路です。「ナビ開始」で現在地に追従します 🧭`);
+  toast(`${shop.name} への最短経路です。「ナビ開始」で現在地に追従します`);
 }
 
 $('card-goto').addEventListener('click', () => {
@@ -945,8 +1103,9 @@ $('card-goto').addEventListener('click', () => {
 });
 
 function focusShop(shop) {
+  if (shop.floor !== viewFloor) setViewFloor(shop.floor); // 表示だけ切替（現在地フロアは維持）
   const p = shop._pos;
-  flyTo(p.clone().add(new THREE.Vector3(0, 26, 24)), p.clone().setY(2));
+  flyTo(p.clone().add(new THREE.Vector3(0, 26, 24)), p.clone().add(new THREE.Vector3(0, 2, 0)));
 }
 
 // ------------------------------------------------------------
@@ -961,7 +1120,7 @@ function geoStatusText() {
   return geoState.ok ? 'GPS追従中' : 'エリア外';
 }
 function updateGeoChip() {
-  $('nav-gps').textContent = `📡 ${geoStatusText()}`;
+  $('nav-gps').querySelector('span').textContent = geoStatusText();
 }
 function startGeolocation() {
   if (geoState.watchId != null || !('geolocation' in navigator)) return;
@@ -990,7 +1149,7 @@ addEventListener('pointerdown', () => startGeolocation(), { once: true });
 // ------------------------------------------------------------
 const NAV_OFFROUTE_DIST = 6;  // 経路逸脱とみなす距離（≈10m: 屋内GPS誤差を考慮）
 const NAV_ARRIVE_DIST = 5;    // 到着とみなす距離（≈8m）
-let navMode = null; // { view, heading, headingOffset, zoom, samples, goal, len, rerouteAt }
+// navMode: { view, heading, headingOffset, zoom, samples, goal, len, rerouteAt }（宣言はフロア状態節）
 
 addEventListener('keydown', (e) => { if (e.key === 'Escape') exitNav(false); });
 
@@ -1022,17 +1181,20 @@ canvas.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 function refreshNavRoute() {
-  navMode.samples = routeCurve.getSpacedPoints(160);
-  navMode.goal = routeCurve.getPointAt(1);
-  navMode.len = routeCurve.getLength();
+  const curve = currentRoute.curves[activeLegIndex];
+  navMode.samples = curve.getSpacedPoints(160);
+  navMode.goal = currentRoute.curves[currentRoute.curves.length - 1].getPointAt(1);
+  navMode.len = curve.getLength();
 }
 
 function startNav() {
-  if (!routeCurve || !currentRoute) { toast('先に目的地を選んでください 🧭'); return; }
+  if (!routeCurve || !currentRoute) { toast('先に目的地を選んでください'); return; }
   startGeolocation();
   camTween = null;
   controls.enabled = false;
   avatar.userData.hereLabel.visible = false; // 追従視点では自分の目印は不要
+  setActiveLeg(0);
+  setViewFloor(currentRoute.legs[0].floor, { alsoUser: true });
   const t0 = routeCurve.getTangentAt(0);
   navMode = {
     view: 'follow',
@@ -1046,7 +1208,7 @@ function startNav() {
   $('nav-hud').classList.remove('hidden');
   $('nav-offroute').classList.add('hidden');
   $('nav-dest').textContent = `${getPoi(currentRoute.toId).name} へ案内中`;
-  $('nav-view').textContent = '🔭 俯瞰';
+  setControlIcon('nav-view', 'overview', '俯瞰');
   updateGeoChip();
   setRoutePanelCollapsed(true);
   closeCard();
@@ -1066,10 +1228,11 @@ function exitNav(arrived = false) {
   if (arrived) {
     avatarPlaceId = currentRoute?.toId ?? avatarPlaceId;
     clearRoute();
-    toast('目的地に到着しました！ 🎉');
+    toast('目的地に到着しました！');
   } else {
     setRoutePanelCollapsed(false);
   }
+  setViewFloor(userFloor);
 }
 
 function turnTo(target, k) {
@@ -1093,15 +1256,28 @@ function updateNav(dt, t) {
     if (geoState.course != null) turnTo(geoState.course, dt * 4);
     else if (moving && Math.hypot(dx, dz) > 0.01) turnTo(Math.atan2(dx, dz), dt * 4);
   }
-  avatar.position.y = moving ? Math.abs(Math.sin(t * 10)) * 0.2 : 0;
+  avatar.position.y = floorY() + (moving ? Math.abs(Math.sin(t * 10)) * 0.2 : 0);
 
-  // ルート進捗（最寄りサンプル点）
+  // ルート進捗（進行中レッグの最寄りサンプル点）
   const s = navMode.samples;
   let bi = 0, bd = Infinity;
   for (let i = 0; i < s.length; i++) {
     const ddx = s[i].x - avatar.position.x, ddz = s[i].z - avatar.position.z;
     const d = ddx * ddx + ddz * ddz;
     if (d < bd) { bd = d; bi = i; }
+  }
+
+  // レッグ終端（エレベーター等）に到達 → 次フロアのレッグへ自動で切替
+  const lastLeg = activeLegIndex >= currentRoute.legs.length - 1;
+  if (!lastLeg && bi >= s.length - 4) {
+    const next = currentRoute.legs[activeLegIndex + 1];
+    setActiveLeg(activeLegIndex + 1);
+    userFloor = next.floor;
+    setViewFloor(next.floor);
+    avatar.position.set(next.points[0].x, floorY(), next.points[0].z);
+    refreshNavRoute();
+    toast(`${next.via}で ${FLOORS[next.floor].short} へ`, 3400);
+    return;
   }
 
   // 立ち止まっているときは経路の進む向きへ自然に向き直る
@@ -1121,15 +1297,17 @@ function updateNav(dt, t) {
       avatar.position.clone().addScaledVector(camF, -navMode.zoom * 0.8)
         .add(new THREE.Vector3(0, navMode.zoom * 0.78, 0)), k);
     controls.target.lerp(
-      avatar.position.clone().addScaledVector(camF, navMode.zoom * 0.42).setY(1.2), k);
+      avatar.position.clone().addScaledVector(camF, navMode.zoom * 0.42).setY(floorY() + 1.2), k);
   } else {
     camera.position.lerp(avatar.position.clone().add(new THREE.Vector3(0, navMode.zoom * 4, navMode.zoom * 1.2)), k);
-    controls.target.lerp(avatar.position.clone().setY(0), k);
+    controls.target.lerp(avatar.position.clone().setY(floorY()), k);
   }
   camera.lookAt(controls.target);
 
-  // 残距離表示
-  const remainM = Math.max(0, Math.round((1 - bi / (s.length - 1)) * navMode.len * METER_PER_UNIT));
+  // 残距離表示（進行中レッグの残り＋後続レッグ）
+  let remain = (1 - bi / (s.length - 1)) * navMode.len;
+  for (let i = activeLegIndex + 1; i < currentRoute.curves.length; i++) remain += currentRoute.curves[i].getLength();
+  const remainM = Math.max(0, Math.round(remain * METER_PER_UNIT));
   const remainText = `目的地まで 約${remainM}m`;
   const remainEl = $('nav-remain');
   if (remainEl.textContent !== remainText) remainEl.textContent = remainText;
@@ -1142,13 +1320,15 @@ function updateNav(dt, t) {
     const toId = currentRoute.toId;
     if (showRoute(toId, { fly: false })) {
       refreshNavRoute();
-      toast('現在地からルートを引き直しました 🔄');
+      toast('現在地からルートを引き直しました');
     }
   }
 
-  // 到着判定
-  const g = navMode.goal;
-  if (Math.hypot(g.x - avatar.position.x, g.z - avatar.position.z) < NAV_ARRIVE_DIST) exitNav(true);
+  // 到着判定（最終レッグのみ）
+  if (lastLeg) {
+    const g = navMode.goal;
+    if (Math.hypot(g.x - avatar.position.x, g.z - avatar.position.z) < NAV_ARRIVE_DIST) exitNav(true);
+  }
 }
 
 $('btn-nav').addEventListener('click', () => navMode ? exitNav(false) : startNav());
@@ -1156,10 +1336,10 @@ $('nav-exit').addEventListener('click', () => exitNav(false));
 $('nav-view').addEventListener('click', () => {
   if (!navMode) return;
   navMode.view = navMode.view === 'follow' ? 'top' : 'follow';
-  $('nav-view').textContent = navMode.view === 'follow' ? '🔭 俯瞰' : '🚶 追従';
+  setControlIcon('nav-view', navMode.view === 'follow' ? 'overview' : 'walk', navMode.view === 'follow' ? '俯瞰' : '追従');
 });
 $('nav-ar').addEventListener('click', () => {
-  if (currentRoute) startAR(currentRoute, getPoi, METER_PER_UNIT);
+  if (currentRoute) startAR(arRouteLeg(), getPoi, METER_PER_UNIT);
 });
 
 // ------------------------------------------------------------
@@ -1180,7 +1360,10 @@ canvas.addEventListener('pointerup', (e) => {
   pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects([...shopMeshes, ...labelSprites.filter(l => l.userData.shop)], false);
+  const hits = raycaster.intersectObjects([
+    ...shopMeshes.filter(m => m.userData.shop.floor === viewFloor),
+    ...labelSprites.filter(l => l.userData.shop && l.userData.shop.floor === viewFloor),
+  ], false);
   const hit = hits.find(h => h.object.userData?.shop || h.object.userData?.type === 'shop');
   if (hit) {
     const shop = hit.object.userData.shop;
@@ -1203,7 +1386,7 @@ canvas.addEventListener('pointermove', (e) => {
   pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(shopMeshes, false);
+  const hits = raycaster.intersectObjects(shopMeshes.filter(mm => mm.userData.shop.floor === viewFloor), false);
   const m = hits[0]?.object ?? null;
   if (hovered && hovered !== m) hovered.material.emissiveIntensity = isNight ? 0.6 : 0.0;
   hovered = m;
@@ -1226,8 +1409,9 @@ function animate() {
   const detailView = viewDistance < 48 && viewAngle < 1.12;
   const areaView = viewDistance < 74;
   for (const s of SHOPS) {
-    const on = s._categoryVisible;
+    const on = s._categoryVisible && s.floor === viewFloor; // 表示中フロアのみ描画
     const selected = cardShop === s || hovered === s._mesh;
+    s._mesh.visible = on;
     s._label.visible = on;
     let labelScale = selected ? 1.1 : detailView ? 1 : areaView ? 0.72 : 0.5;
     let labelOpacity = selected ? 1 : detailView ? 1 : areaView ? 0.92 : 0.78;
@@ -1267,20 +1451,20 @@ function animate() {
     particles.geometry.attributes.position.needsUpdate = true;
   }
 
-  // 経路の矢印を流す
-  if (routeCurve) {
+  // 経路の矢印を流す（各レッグは自フロアの高さで流れる）
+  if (currentRoute) {
     for (const dot of routeDots) {
       const u = (dot.userData.offset + t * 0.055) % 1;
-      dot.position.copy(routeCurve.getPointAt(u)).setY(0.88);
+      dot.position.copy(dot.userData.curve.getPointAt(u)).setY(dot.userData.baseY + 0.88);
       const pulse = 0.88 + Math.sin(t * 4 + dot.userData.offset * 18) * 0.18;
       dot.scale.setScalar(pulse);
     }
     for (const cone of routeArrows) {
       const u = (cone.userData.offset + t * 0.06) % 1;
-      const p = routeCurve.getPointAt(u);
-      const tan = routeCurve.getTangentAt(u);
-      cone.position.copy(p).setY(0.9);
-      cone.lookAt(p.clone().add(tan));
+      const p = cone.userData.curve.getPointAt(u);
+      const tan = cone.userData.curve.getTangentAt(u);
+      cone.position.copy(p).setY(cone.userData.baseY + 0.9);
+      cone.lookAt(cone.position.clone().add(tan));
     }
   }
 
@@ -1339,7 +1523,7 @@ canvas.addEventListener('webglcontextrestored', () => {
 animate();
 setTimeout(() => {
   $('loader').classList.add('done');
-  toast('ようこそ！グランフロント大阪 北館1F バーチャルマップへ 🏙️ お店をタップしてみてください');
+  toast('ようこそ！グランフロント大阪 北館バーチャルマップへ。右のチップでフロアを切替できます');
   // オープニングカメラ演出
   camera.position.set(-70, 120, 130);
   flyTo(new THREE.Vector3(0, 54, 64), new THREE.Vector3(0, 0, -2), 2.4);

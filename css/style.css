@@ -93,6 +93,34 @@ button, select, input, a { touch-action: manipulation; }
 .filter-chip:hover { color: var(--txt); border-color: var(--accent); }
 .filter-chip.active { color: var(--txt); border-color: var(--accent); background: rgba(56,189,248,.15); font-weight: 700; }
 
+/* ---------- フロア切替 ---------- */
+#floor-switcher {
+  position: absolute; z-index: 18; right: 18px; top: calc(50% - 118px); transform: translateY(-100%);
+  display: grid; gap: 6px;
+}
+.floor-chip {
+  display: grid; place-items: center; width: 46px; height: 42px;
+  border: 1px solid var(--line); border-radius: 13px; cursor: pointer;
+  color: var(--txt-dim); background: var(--panel); backdrop-filter: blur(14px);
+  font: 800 13px/1 inherit; letter-spacing: .04em;
+  box-shadow: 0 5px 18px rgba(0,0,0,.22);
+  transition: all .18s;
+}
+.floor-chip:active { transform: scale(.94); }
+.floor-chip.active {
+  color: #062033; background: var(--accent);
+  border-color: transparent; box-shadow: var(--glow);
+}
+body.nav-active #floor-switcher { display: none; }
+
+.floor-badge {
+  display: inline-block; font-style: normal; font-weight: 800; font-size: 9.5px;
+  padding: 1px 6px; margin-right: 6px; border-radius: 6px;
+  background: rgba(56,189,248,.16); color: var(--accent);
+  border: 1px solid rgba(56,189,248,.3); vertical-align: 1px;
+}
+.route-transfer { color: #fbbf24; font-weight: 700; font-size: 12px; }
+
 /* ---------- 地図操作 ---------- */
 #map-controls {
   position: absolute; z-index: 18; right: 18px; top: 50%; transform: translateY(-50%);
@@ -313,7 +341,10 @@ body.nav-active #quick-destination,
 body.nav-active #filters,
 body.nav-active #map-controls,
 body.nav-active #zoom-hint,
-body.nav-active #route-panel { display: none; }
+body.nav-active #route-panel,
+body.nav-active #topbar,
+body.nav-active #shop-card,
+body.nav-active #drawer { display: none !important; }
 
 /* ---------- トースト ---------- */
 #toast {
@@ -401,7 +432,7 @@ body.nav-active #route-panel { display: none; }
   .topbar-actions { gap: 6px; }
   .chip-btn { min-width: 44px; min-height: 44px; padding: 8px 10px; }
   #btn-list { font-size: 0; }
-  #btn-list::after { content: '☰'; font-size: 20px; }
+  #btn-list::after { content: none; }
   #quick-destination {
     top: calc(max(8px, env(safe-area-inset-top)) + 48px); left: 10px;
     width: calc(100vw - 76px); min-height: 50px; border-radius: 15px;
@@ -415,6 +446,8 @@ body.nav-active #route-panel { display: none; }
   .filter-chip { min-height: 42px; padding: 8px 13px; flex: 0 0 auto; font-size: 12px; }
   #zoom-hint { top: calc(max(8px, env(safe-area-inset-top)) + 104px); white-space: nowrap; }
   #map-controls { right: 10px; top: 45%; gap: 6px; }
+  #floor-switcher { right: 10px; top: calc(45% - 78px); gap: 5px; }
+  .floor-chip { width: 48px; height: 40px; }
   #map-controls button { width: 48px; height: 48px; border-radius: 15px; }
   #route-panel {
     right: 8px; left: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto;
@@ -456,7 +489,134 @@ body.nav-active #route-panel { display: none; }
   .brand-txt strong { font-size: 13px; }
 }
 
+/* ---------- Collision-safe responsive states ---------- */
+@media (max-width: 820px) {
+  #route-panel.card-covered { transform: translateY(calc(100% + 32px)); opacity: 0; pointer-events: none; }
+}
+body.nav-active #nav-banner {
+  top: max(14px, env(safe-area-inset-top)); width: min(520px, calc(100vw - 24px));
+  min-width: 0; padding: 12px 16px;
+}
+body.nav-active #nav-offroute {
+  top: calc(max(14px, env(safe-area-inset-top)) + 112px); max-width: calc(100vw - 24px);
+  white-space: normal; text-align: center;
+}
+body.nav-active #nav-controls {
+  width: min(520px, calc(100vw - 24px)); bottom: max(12px, env(safe-area-inset-bottom));
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+body.nav-active #nav-controls .chip-btn { min-width: 0; width: 100%; padding-inline: 10px; }
+@media (max-width: 420px) {
+  body.nav-active #nav-dest { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.nav-active #nav-controls { gap: 7px; }
+  body.nav-active #nav-controls .chip-btn { min-height: 48px; padding-inline: 7px; font-size: 13px; }
+}
+@media (max-height: 600px) {
+  #filters { display: none; }
+  #shop-card { max-height: calc(100dvh - 20px); }
+  .card-logo { height: 70px; }
+  #card-desc { max-height: 70px; }
+  body.nav-active #nav-banner { padding-block: 8px; }
+  body.nav-active #nav-offroute { top: 92px; }
+  body.nav-active #nav-controls .chip-btn { min-height: 44px; }
+}
+
+@media (max-width: 820px) {
+  body.detail-active #quick-destination,
+  body.detail-active #filters,
+  body.detail-active #map-controls { display: none; }
+}
+@media (max-height: 600px) and (max-width: 900px) {
+  body.route-active #map-controls { display: none; }
+  body.detail-active #topbar { display: none; }
+}
+
 @media (max-width: 380px) {
   .brand-txt { display: none; }
   .route-actions { grid-template-columns: 1fr auto; }
+}
+
+/* ============ DIGITAL TWIN visual system ============ */
+:root {
+  --bg: #050b16; --panel: rgba(8,18,34,.78); --panel-solid: #0b1628;
+  --line: rgba(151,218,255,.16); --txt: #f4f8ff; --txt-dim: #91a4bd;
+  --accent: #5de4ff; --accent2: #9b7bff; --gold: #f6c76a;
+  --glow: 0 0 28px rgba(93,228,255,.28);
+}
+.icon-sprite { position: fixed; width: 0; height: 0; overflow: hidden; }
+svg { width: 1.15em; height: 1.15em; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#i-grid path { fill: currentColor; stroke: none; }
+.world-atmosphere { position: absolute; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(circle at 50% 55%, transparent 25%, rgba(5,11,22,.2) 62%, rgba(5,11,22,.68)); mix-blend-mode: multiply; }
+#topbar { padding: 18px 22px; background: linear-gradient(to bottom, rgba(3,8,18,.92), rgba(3,8,18,.2) 72%, transparent); }
+.brand-mark { position: relative; overflow: hidden; border: 1px solid rgba(93,228,255,.45); background: radial-gradient(circle at 45% 45%, rgba(93,228,255,.28), rgba(155,123,255,.12) 50%, rgba(6,15,28,.9)); color: #dffaff; box-shadow: var(--glow), inset 0 0 18px rgba(93,228,255,.12); }
+.brand-mark::before { content:""; position:absolute; inset:7px; border:1px solid rgba(246,199,106,.48); border-radius:50%; }
+.brand-mark span { position: relative; font-size: 11px; letter-spacing: .12em; }
+.brand-txt small { color: var(--accent); font-size: 9.5px; letter-spacing: .2em; }
+.chip-btn, .primary-btn, .ar-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+#quick-destination { top: 84px; left: 22px; border-radius: 18px; background: linear-gradient(120deg, rgba(8,22,40,.94), rgba(15,20,45,.84)); backdrop-filter: blur(20px) saturate(1.25); box-shadow: 0 14px 40px rgba(0,0,0,.38), inset 0 0 22px rgba(93,228,255,.06); }
+.quick-search-icon { border-radius: 50%; border: 1px solid rgba(93,228,255,.5); background: rgba(93,228,255,.1); color: var(--accent); font-size: 20px; box-shadow: inset 0 0 14px rgba(93,228,255,.12); }
+#quick-destination small { color: var(--accent); font-size: 8.5px; margin-bottom: 3px; letter-spacing: .16em; }
+#filters { top: 151px; left: 22px; }
+.filter-chip.active { box-shadow: inset 0 -2px 0 var(--accent), 0 0 22px rgba(93,228,255,.1); }
+#drawer { background: linear-gradient(180deg, rgba(8,19,36,.96), rgba(7,13,27,.94)); backdrop-filter: blur(24px); }
+.icon-btn svg { width: 18px; height: 18px; }
+#shop-card { background: linear-gradient(145deg, rgba(9,22,40,.94), rgba(13,16,34,.9)); backdrop-filter: blur(24px) saturate(1.2); }
+.card-logo { background: linear-gradient(135deg, #fff, #eef6ff); }
+#route-panel { background: linear-gradient(145deg, rgba(9,22,40,.94), rgba(13,16,34,.9)); }
+#nav-gps, #nav-offroute { display: flex; align-items: center; justify-content: center; gap: 6px; }
+#nav-gps svg { width: 13px; height: 13px; color: var(--accent); }
+#nav-offroute svg { width: 17px; height: 17px; flex: 0 0 auto; }
+#map-controls button svg { width: 22px; height: 22px; }
+#btn-north svg { color: #f87171; }
+.quick-search-arrow { display: grid; place-items: center; }
+.quick-search-arrow svg, .route-toggle-icon svg { width: 18px; height: 18px; }
+#card-link { display: inline-flex; gap: 7px; }
+#card-link svg { width: 14px; height: 14px; }
+#ar-turn-arrow { display: grid; place-items: center; }
+#ar-turn-arrow svg { width: 84px; height: 84px; stroke-width: 1.35; }
+@media (max-width: 640px) {
+  #topbar { padding: max(8px, env(safe-area-inset-top)) 12px 8px; }
+  #quick-destination { top: calc(max(8px, env(safe-area-inset-top)) + 48px); left: 10px; }
+  #filters { top: calc(max(8px, env(safe-area-inset-top)) + 104px); left: 10px; }
+  #btn-list { font-size: inherit; }
+  #btn-list::after { content: none; }
+  #btn-list span { display:none; }
+  #btn-list svg { width:20px; height:20px; }
+}
+
+/* ---------- Control rhythm: shared size, radius and spacing ---------- */
+:root {
+  --control-h: 50px;
+  --control-gap: 10px;
+  --control-radius: 14px;
+  --control-icon: 19px;
+}
+.route-actions {
+  grid-template-columns: minmax(0, 1fr) var(--control-h);
+  gap: var(--control-gap);
+  margin-top: var(--control-gap);
+  align-items: stretch;
+}
+.route-actions > * {
+  box-sizing: border-box;
+  height: var(--control-h);
+  min-height: var(--control-h);
+  margin: 0;
+  border-radius: var(--control-radius);
+  padding: 0 16px;
+}
+.route-actions svg { width: var(--control-icon); height: var(--control-icon); flex: 0 0 auto; }
+#btn-nav { grid-column: 1 / -1; height: var(--control-h); min-height: var(--control-h); }
+#btn-ar { width: 100%; }
+#btn-clear { width: var(--control-h); padding: 0; }
+#route-info { margin: 0; }
+#nav-controls, .ar-controls { gap: var(--control-gap); }
+#nav-controls .chip-btn, .ar-controls .chip-btn {
+  min-height: var(--control-h); border-radius: var(--control-radius);
+}
+@media (max-width: 640px) {
+  :root { --control-h: 56px; --control-gap: 12px; --control-radius: 15px; --control-icon: 20px; }
+  .route-actions { grid-template-columns: minmax(0, 1fr) var(--control-h); gap: var(--control-gap); }
+  .route-actions > *, #btn-nav { height: var(--control-h); min-height: var(--control-h); padding-block: 0; }
+  #btn-clear { width: var(--control-h); padding: 0; }
 }

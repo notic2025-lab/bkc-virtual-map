@@ -3,36 +3,57 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>GFO 北館1F バーチャルマップ | GRAND FRONT OSAKA</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260713b">
+<title>GFO 北館 バーチャルマップ | GRAND FRONT OSAKA</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23050b16'/><path d='M22 72V28h56v44M22 50h56M50 28v44' fill='none' stroke='%235de4ff' stroke-width='7'/><circle cx='50' cy='50' r='8' fill='%23f6c76a'/></svg>">
+<link rel="stylesheet" href="css/style.css?v=20260713f">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
 </head>
 <body>
+<svg class="icon-sprite" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4.5 4.5"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18h2.3c4.8 0 1.6-12 6.7-12"/></symbol>
+  <symbol id="i-ar" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="m12 7 4 3-4 7-4-7z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m5 9 7 7 7-7"/></symbol>
+  <symbol id="i-north" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m12 5 3 8-3-1-3 1z"/><path d="M12 12v6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8"/><path d="M18 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 3 20h18z"/><path d="M12 9v5M12 17.5v.1"/></symbol>
+  <symbol id="i-overview" viewBox="0 0 24 24"><path d="M4 17 8 7h8l4 10"/><circle cx="12" cy="9" r="2"/><path d="M5 17h14M8 20h8"/></symbol>
+  <symbol id="i-walk" viewBox="0 0 24 24"><circle cx="13" cy="5" r="2"/><path d="m11 9 3 3 4 1M12 9l-3 5-4 2M9 14l3 2 1 5M9 14l-2 6"/></symbol>
+  <symbol id="i-gps" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
+  <symbol id="i-turn" viewBox="0 0 24 24"><path d="m12 3 6 7h-4v6a5 5 0 0 1-5 5H6v-4h3a1 1 0 0 0 1-1v-6H6z"/></symbol>
+</svg>
 
 <div id="app">
   <canvas id="scene"></canvas>
+  <div class="world-atmosphere" aria-hidden="true"></div>
 
   <!-- ヘッダー -->
   <header id="topbar">
     <div class="brand">
-      <span class="brand-mark">GFO</span>
+      <span class="brand-mark"><span>GFO</span></span>
       <div class="brand-txt">
         <strong>グランフロント大阪</strong>
-        <small>北館 1F バーチャルマップ</small>
+        <small>NORTH B1-2F · DIGITAL TWIN</small>
       </div>
     </div>
     <div class="topbar-actions">
-      <button id="btn-list" class="chip-btn" title="ショップ一覧">☰ ショップ</button>
+      <button id="btn-list" class="chip-btn" title="スポット一覧"><svg><use href="#i-grid"/></svg><span>スポット</span></button>
     </div>
   </header>
 
   <button id="quick-destination" type="button">
-    <span class="quick-search-icon">⌕</span>
-    <span><small>現在地から案内</small><strong>目的地・店舗を検索</strong></span>
-    <span class="quick-search-arrow">›</span>
+    <span class="quick-search-icon"><svg><use href="#i-search"/></svg></span>
+    <span><small>EXPLORE NORTH B1-2F</small><strong>どこへ行きますか？</strong></span>
+    <span class="quick-search-arrow"><svg><use href="#i-chevron-right"/></svg></span>
   </button>
 
   <!-- カテゴリフィルタ -->
@@ -44,11 +65,18 @@
     <button class="filter-chip" data-cat="kc"><i style="background:#e62b67"></i>ナレッジキャピタル</button>
   </div>
 
+  <!-- フロア切替 -->
+  <div id="floor-switcher" aria-label="フロア切替">
+    <button class="floor-chip" data-floor="2f" type="button">2F</button>
+    <button class="floor-chip active" data-floor="1f" type="button">1F</button>
+    <button class="floor-chip" data-floor="b1f" type="button">B1</button>
+  </div>
+
   <!-- 地図操作 -->
   <div id="map-controls" aria-label="地図操作">
-    <button id="btn-north" type="button" title="北を上に戻す"><span>↑</span><small>北</small></button>
-    <button id="btn-zoom-in" type="button" title="拡大">＋</button>
-    <button id="btn-zoom-out" type="button" title="縮小">−</button>
+    <button id="btn-north" type="button" title="北を上に戻す"><svg><use href="#i-north"/></svg><small>北</small></button>
+    <button id="btn-zoom-in" type="button" title="拡大"><svg><use href="#i-plus"/></svg></button>
+    <button id="btn-zoom-out" type="button" title="縮小"><svg><use href="#i-minus"/></svg></button>
   </div>
   <div id="zoom-hint"><span>＋</span> 拡大すると店舗情報を表示</div>
 
@@ -56,14 +84,14 @@
   <aside id="drawer">
     <div class="drawer-head">
       <input id="search" type="search" placeholder="ショップを検索…">
-      <button id="drawer-close" class="icon-btn">✕</button>
+      <button id="drawer-close" class="icon-btn" aria-label="閉じる"><svg><use href="#i-close"/></svg></button>
     </div>
     <div id="shop-list"></div>
   </aside>
 
   <!-- ショップ情報カード -->
   <div id="shop-card" class="hidden">
-    <button id="card-close" class="icon-btn">✕</button>
+    <button id="card-close" class="icon-btn" aria-label="閉じる"><svg><use href="#i-close"/></svg></button>
     <div class="card-logo"><img id="card-logo-img" alt=""></div>
     <div class="card-body">
       <span id="card-tag" class="card-tag"></span>
@@ -71,8 +99,8 @@
       <p id="card-en" class="card-en"></p>
       <p id="card-desc"></p>
       <div class="card-actions">
-        <button id="card-goto" class="primary-btn">🧭 経路を見る</button>
-        <a id="card-link" href="#" target="_blank" rel="noopener" class="ghost-btn">公式ページ ↗</a>
+        <button id="card-goto" class="primary-btn"><svg><use href="#i-route"/></svg>ルートを開く</button>
+        <a id="card-link" href="#" target="_blank" rel="noopener" class="ghost-btn">公式ページ <svg><use href="#i-external"/></svg></a>
       </div>
     </div>
   </div>
@@ -82,14 +110,14 @@
     <button id="route-panel-toggle" type="button" aria-expanded="true" aria-controls="route-panel-body">
       <span class="route-handle" aria-hidden="true"></span>
       <span id="route-panel-title">経路を検索</span>
-      <span class="route-toggle-icon" aria-hidden="true">⌄</span>
+      <span class="route-toggle-icon" aria-hidden="true"><svg><use href="#i-chevron-down"/></svg></span>
     </button>
     <div id="route-panel-body">
     <div id="route-info" class="hidden"></div>
     <div class="route-actions">
-      <button id="btn-nav" class="ar-btn ar-primary">🧭 ナビ開始</button>
-      <button id="btn-ar" class="ar-btn" disabled>📱 ARナビ</button>
-      <button id="btn-clear" class="ghost-btn small">✕</button>
+      <button id="btn-nav" class="ar-btn ar-primary"><svg><use href="#i-route"/></svg>ナビゲーション開始</button>
+      <button id="btn-ar" class="ar-btn" disabled><svg><use href="#i-ar"/></svg>ARナビ</button>
+      <button id="btn-clear" class="ghost-btn small" aria-label="ルートを消去"><svg><use href="#i-close"/></svg></button>
     </div>
     </div>
   </div>
@@ -99,13 +127,13 @@
     <div id="nav-banner">
       <div id="nav-dest"></div>
       <div id="nav-remain"></div>
-      <div id="nav-gps"></div>
+      <div id="nav-gps"><svg><use href="#i-gps"/></svg><span>GPS待機中</span></div>
     </div>
-    <div id="nav-offroute" class="hidden">⚠ ルートから外れています — 引き直します</div>
+    <div id="nav-offroute" class="hidden"><svg><use href="#i-alert"/></svg>ルートから外れています — 引き直します</div>
     <div id="nav-controls">
-      <button id="nav-view" class="chip-btn">🔭 俯瞰</button>
-      <button id="nav-ar" class="chip-btn">📱 AR</button>
-      <button id="nav-exit" class="chip-btn danger">✕ 終了</button>
+      <button id="nav-view" class="chip-btn"><svg><use href="#i-overview"/></svg><span>俯瞰</span></button>
+      <button id="nav-ar" class="chip-btn"><svg><use href="#i-ar"/></svg><span>ARナビ</span></button>
+      <button id="nav-exit" class="chip-btn danger"><svg><use href="#i-close"/></svg><span>終了</span></button>
     </div>
   </div>
 
@@ -118,16 +146,16 @@
     <canvas id="ar-canvas"></canvas>
     <!-- 進路が画面外にあるときの方向インジケーター -->
     <div id="ar-turn" class="hidden">
-      <div id="ar-turn-arrow">➤</div>
+      <div id="ar-turn-arrow"><svg><use href="#i-turn"/></svg></div>
       <div id="ar-turn-text"></div>
     </div>
     <div id="ar-hud">
       <div id="ar-instruction">経路を読み込み中…</div>
       <div id="ar-distance"></div>
       <div class="ar-controls">
-        <button id="ar-prev" class="chip-btn">◀ 前へ</button>
-        <button id="ar-next" class="chip-btn">次へ ▶</button>
-        <button id="ar-exit" class="chip-btn danger">終了</button>
+        <button id="ar-prev" class="chip-btn"><svg><use href="#i-prev"/></svg><span>前へ</span></button>
+        <button id="ar-next" class="chip-btn"><span>次へ</span><svg><use href="#i-next"/></svg></button>
+        <button id="ar-exit" class="chip-btn danger"><svg><use href="#i-close"/></svg><span>終了</span></button>
       </div>
     </div>
   </div>
@@ -141,6 +169,6 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260713b"></script>
+<script type="module" src="js/app.js?v=20260713f"></script>
 </body>
 </html>
