@@ -736,12 +736,14 @@ function startWalk() {
   const dur = Math.max(6, routeCurve.getLength() / 7);
   walking = { t: 0, dur };
   controls.enabled = false;
+  setRoutePanelCollapsed(true); // パネルを畳んでマップ全体を見せる
   toast('お散歩モード：経路を歩いています… 🚶');
 }
 function stopWalk() {
   if (!walking) return;
   walking = null;
   controls.enabled = true;
+  setRoutePanelCollapsed(false); // 到着したらパネルを再表示
   avatarPlaceId = currentRoute?.toId ?? avatarPlaceId;
   syncFromSelect();
   const target = avatar.position.clone();
