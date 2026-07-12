@@ -61,6 +61,18 @@ export async function startAR(currentRoute, getPoi, mpu) {
   view.classList.remove('hidden');
   video = $('ar-video');
 
+  // --- デバイス方位（iOSはユーザー操作直後の許可要求が必要）---
+  // カメラのawaitより先に呼び、ボタンタップのユーザー操作コンテキストを維持する。
+  hasOrientation = false;
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+      const p = await DeviceOrientationEvent.requestPermission();
+      if (p === 'granted') listenOrientation();
+    } else if ('ondeviceorientationabsolute' in window || 'ondeviceorientation' in window) {
+      listenOrientation();
+    }
+  } catch (e) { /* 方位なしでも動作 */ }
+
   // --- カメラ起動（失敗時はシミュレーション背景）---
   let simulated = false;
   try {
@@ -74,17 +86,6 @@ export async function startAR(currentRoute, getPoi, mpu) {
     video.style.display = 'none';
     view.style.background = 'linear-gradient(to bottom, #26374f 0%, #3d5470 55%, #55606e 55%, #3a4250 100%)';
   }
-
-  // --- デバイス方位（iOSは許可が必要）---
-  hasOrientation = false;
-  try {
-    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
-      const p = await DeviceOrientationEvent.requestPermission();
-      if (p === 'granted') listenOrientation();
-    } else if ('ondeviceorientationabsolute' in window || 'ondeviceorientation' in window) {
-      listenOrientation();
-    }
-  } catch (e) { /* 方位なしでも動作 */ }
 
   // --- オーバーレイ用 Three.js ---
   const arCanvas = $('ar-canvas');

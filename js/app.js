@@ -40,7 +40,7 @@ renderer.toneMappingExposure = 1.05;
 
 const scene = new THREE.Scene();
 
-const DAY = { bg: 0xbfe3f2, fog: 0xbfe3f2, hemi: 0.9, sun: 1.6, amb: 0.35 };
+const DAY = { bg: 0x101b28, fog: 0x172433, hemi: 0.9, sun: 1.6, amb: 0.35 };
 const NIGHT = { bg: 0x0a1020, fog: 0x0a1020, hemi: 0.25, sun: 0.25, amb: 0.15 };
 let isNight = false;
 
@@ -83,8 +83,8 @@ scene.add(sun);
 //   遠景まで滑らかなグラデーションを描き、その色を反射環境にも使う。
 // ------------------------------------------------------------
 const SKY = {
-  day:   { top: 0x1f63ad, bottom: 0xd4ecf8 },
-  night: { top: 0x04060e, bottom: 0x162138 },
+  day:   { top: 0x08111c, bottom: 0x172433 },
+  night: { top: 0x02050a, bottom: 0x0b1320 },
 };
 const skyMat = new THREE.ShaderMaterial({
   uniforms: {
@@ -239,7 +239,6 @@ const shopGroup = new THREE.Group();
 scene.add(shopGroup);
 
 const GLASS_OPACITY = 0.32;
-const PRIORITY_SHOPS = new Set(['the-lab', 'tullys', 'zara-home', 'actus', 'soholm']);
 
 for (const shop of SHOPS) {
   const { x, z } = toWorld(shop.pin.left, shop.pin.top);
@@ -287,7 +286,10 @@ for (const shop of SHOPS) {
   const labelY = h + 3.0;
   const label = makeLabelSprite(shop.name.length > 14 ? shop.en : shop.name, { border: CATEGORIES[shop.cat].css });
   label.position.set(x, labelY, z);
-  label.userData = { type: 'shop', shop, baseY: labelY, phase: Math.random() * Math.PI * 2 };
+  label.userData = {
+    type: 'shop', shop, baseY: labelY, phase: Math.random() * Math.PI * 2,
+    detailScale: label.scale.clone(),
+  };
   shopGroup.add(label);
   labelSprites.push(label);
   shop._mesh = mesh;
@@ -808,15 +810,16 @@ $('btn-north').addEventListener('click', () => {
   toast('北を上に戻しました');
 });
 
-$('btn-route').addEventListener('click', () => {
+function updateRouteFromSelections() {
   const from = resolveFrom($('route-from').value);
   const to = $('route-to').value;
   if (from === to) { toast('出発地と目的地が同じです'); return; }
   if (showRoute(from, to)) {
-    if (matchMedia('(max-width: 640px)').matches) setRoutePanelCollapsed(true);
-    toast('経路を表示しました。下のバーからARナビも選べます');
+    setRoutePanelCollapsed(false);
   }
-});
+}
+$('route-from').addEventListener('change', updateRouteFromSelections);
+$('route-to').addEventListener('change', updateRouteFromSelections);
 $('btn-clear').addEventListener('click', () => { clearRoute(); stopWalk(); setRoutePanelCollapsed(false); });
 $('btn-walk').addEventListener('click', () => walking ? stopWalk() : startWalk());
 $('btn-ar').addEventListener('click', () => {
@@ -847,24 +850,100 @@ $('btn-night').addEventListener('click', () => {
 $('btn-list').addEventListener('click', () => $('drawer').classList.toggle('open'));
 $('drawer-close').addEventListener('click', () => $('drawer').classList.remove('open'));
 
+function normalizeSearch(value) {
+  return value.normalize('NFKC').toLowerCase()
+    .replace(/[ァ-ヶ]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60))
+    .replace(/[^a-z0-9ぁ-ん一-龠]/g, '');
+}
+
+function editDistance(a, b) {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0]; row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const old = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = old;
+    }
+  }
+  return row[b.length];
+}
+
+const SEARCH_ALIASES = {
+  noom: 'ヌーム イタリアン', 'pelle-morbida': 'ペッレモルビダ バッグ',
+  starbucks: 'スターバックス スタバ コーヒー', 'global-style': 'グローバルスタイル スーツ',
+  'the-lab': 'ザラボ ラボ カフェラボ', 'ring-jacket': 'リングジャケット',
+  'g-shock': 'ジーショック 時計', 'tsuchiya-kaban': '土屋鞄 つちやかばん',
+  yondoshi: 'ヨンドシー 4度 ジュエリー', 'zara-home': 'ザラホーム 雑貨',
+  'il-ghiottone': 'イルギオットーネ イタリアン', tullys: 'タリーズ コーヒー カフェ',
+  soholm: 'スーホルム カフェ', actus: 'アクタス 家具 インテリア',
+};
+
+function searchScore(shop, query) {
+  const q = normalizeSearch(query);
+  if (!q) return 0;
+  const category = CATEGORIES[shop.cat]?.label ?? '';
+  const fields = [shop.name, shop.en, shop.tag, category, SEARCH_ALIASES[shop.id] ?? ''].map(normalizeSearch).filter(Boolean);
+  let best = Infinity;
+  for (const field of fields) {
+    if (field === q) best = Math.min(best, 0);
+    else if (field.startsWith(q)) best = Math.min(best, 1);
+    else if (field.includes(q)) best = Math.min(best, 2);
+    const distance = editDistance(q, field);
+    const tolerance = Math.min(3, Math.max(1, Math.ceil(q.length * 0.3)));
+    if (distance <= tolerance) best = Math.min(best, 3 + distance / Math.max(q.length, field.length));
+    if (q.length >= 3 && field.length > q.length) {
+      for (let i = 0; i <= field.length - q.length; i++) {
+        const partDistance = editDistance(q, field.slice(i, i + q.length));
+        if (partDistance <= tolerance) best = Math.min(best, 3.5 + partDistance / q.length);
+      }
+    }
+  }
+  return best;
+}
+
 function renderShopList(filter = '', cat = 'all') {
   const list = $('shop-list');
   list.innerHTML = '';
-  for (const s of SHOPS) {
-    if (cat !== 'all' && s.cat !== cat) continue;
-    if (filter && !(s.name + s.en + s.tag).toLowerCase().includes(filter.toLowerCase())) continue;
+  const results = SHOPS
+    .filter(s => cat === 'all' || s.cat === cat)
+    .map(s => ({ shop: s, score: searchScore(s, filter) }))
+    .filter(result => Number.isFinite(result.score))
+    .sort((a, b) => a.score - b.score || a.shop.name.localeCompare(b.shop.name, 'ja'));
+  if (!results.length) {
+    list.innerHTML = '<div class="search-empty">近い店舗が見つかりませんでした<br><small>店舗名・カテゴリ・「カフェ」などで検索できます</small></div>';
+    return;
+  }
+  for (const { shop: s } of results) {
     const div = document.createElement('div');
     div.className = 'shop-item';
     div.innerHTML = `
       <img class="thumb" src="${s.logo}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
       <div class="meta"><b>${esc(s.name)}</b><span>${esc(s.tag)}</span></div>
-      <span class="cat-dot" style="background:${CATEGORIES[s.cat].css}"></span>`;
-    div.addEventListener('click', () => { openCard(s); focusShop(s); $('drawer').classList.remove('open'); });
+      <button class="shop-route-btn" type="button">経路案内</button>`;
+    div.addEventListener('click', (event) => {
+      if (event.target.closest('.shop-route-btn')) return;
+      openCard(s); focusShop(s); $('drawer').classList.remove('open');
+    });
+    div.querySelector('.shop-route-btn').addEventListener('click', (event) => {
+      event.stopPropagation();
+      startGuidanceTo(s);
+    });
     list.appendChild(div);
   }
 }
 renderShopList();
 $('search').addEventListener('input', (e) => renderShopList(e.target.value, activeCat));
+
+$('quick-destination').addEventListener('click', () => {
+  $('drawer').classList.add('open');
+  $('search').value = '';
+  activeCat = 'all';
+  document.querySelectorAll('.filter-chip').forEach(b => b.classList.toggle('active', b.dataset.cat === 'all'));
+  SHOPS.forEach(s => { s._categoryVisible = true; });
+  renderShopList('', 'all');
+  setTimeout(() => $('search').focus(), 280);
+});
 
 // カテゴリフィルタ
 let activeCat = 'all';
@@ -907,16 +986,21 @@ $('card-close').addEventListener('click', (event) => {
   closeCard();
 });
 addEventListener('keydown', (event) => { if (event.key === 'Escape') closeCard(); });
+
+function startGuidanceTo(shop) {
+  const from = resolveFrom($('route-from').value);
+  if (from === shop.id) { toast('すでに目的地にいます'); return; }
+  $('route-to').value = shop.id;
+  if (!showRoute(from, shop.id)) return;
+  closeCard();
+  $('drawer').classList.remove('open');
+  setRoutePanelCollapsed(false);
+  toast(`${shop.name} への経路を表示しました。ARナビも利用できます`);
+}
+
 $('card-goto').addEventListener('click', () => {
   if (!cardShop) return;
-  $('route-to').value = cardShop.id;
-  const from = resolveFrom($('route-from').value);
-  if (from === cardShop.id) { toast('すでに目的地にいます'); return; }
-  if (showRoute(from, cardShop.id)) {
-    closeCard();
-    if (matchMedia('(max-width: 640px)').matches) setRoutePanelCollapsed(true);
-    toast(`${cardShop.name} への経路を表示しました 🧭`);
-  }
+  startGuidanceTo(cardShop);
 });
 
 function focusShop(shop) {
@@ -983,8 +1067,10 @@ function animate() {
   for (const s of SHOPS) {
     const on = s._categoryVisible;
     const selected = cardShop === s || hovered === s._mesh;
-    const showLabel = on && (selected || detailView || (areaView && PRIORITY_SHOPS.has(s.id)));
-    s._label.visible = showLabel;
+    s._label.visible = on;
+    const labelScale = selected ? 1.1 : detailView ? 1 : areaView ? 0.72 : 0.5;
+    s._label.scale.copy(s._label.userData.detailScale).multiplyScalar(labelScale);
+    s._label.material.opacity = selected ? 1 : detailView ? 1 : areaView ? 0.92 : 0.78;
     s._edges.visible = on;
     s._edges.material.opacity = selected ? 1 : detailView ? 0.8 : areaView ? 0.48 : 0.24;
     s._crown.visible = on && (selected || detailView || areaView);

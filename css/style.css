@@ -61,9 +61,24 @@ button, select, input, a { touch-action: manipulation; }
 .chip-btn.active { background: var(--accent); color: #08101e; font-weight: 700; }
 .chip-btn.danger { border-color: rgba(248,113,113,.5); color: #fca5a5; }
 
+/* ---------- 最短ナビ導線 ---------- */
+#quick-destination {
+  position: absolute; z-index: 19; top: 72px; left: 18px;
+  display: flex; align-items: center; gap: 10px; width: min(310px, calc(100vw - 36px));
+  min-height: 54px; padding: 8px 12px; border: 1px solid rgba(56,189,248,.38);
+  border-radius: 17px; color: var(--txt); background: rgba(10,22,38,.88);
+  backdrop-filter: blur(18px); box-shadow: 0 10px 30px rgba(3,12,24,.3), inset 0 0 20px rgba(56,189,248,.05);
+  cursor: pointer; text-align: left;
+}
+.quick-search-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--accent); color: #062033; font-size: 24px; }
+#quick-destination small, #quick-destination strong { display: block; }
+#quick-destination small { color: #8fb1c7; font-size: 10px; margin-bottom: 2px; }
+#quick-destination strong { font-size: 13px; }
+.quick-search-arrow { margin-left: auto; color: var(--accent); font-size: 25px; }
+
 /* ---------- カテゴリフィルタ ---------- */
 #filters {
-  position: absolute; top: 74px; left: 18px; z-index: 15;
+  position: absolute; top: 136px; left: 18px; z-index: 15;
   display: flex; gap: 8px; flex-wrap: wrap; max-width: 60vw;
 }
 .filter-chip {
@@ -102,6 +117,7 @@ button, select, input, a { touch-action: manipulation; }
 }
 #zoom-hint span { color: var(--accent); font-weight: 800; }
 #zoom-hint.hidden { opacity: 0; transform: translate(-50%, -6px); }
+#zoom-hint { display: none; }
 
 /* ---------- ドロワー ---------- */
 #drawer {
@@ -135,6 +151,13 @@ button, select, input, a { touch-action: manipulation; }
   transition: background .15s;
 }
 .shop-item:hover { background: rgba(255,255,255,.07); }
+.shop-route-btn {
+  flex-shrink: 0; min-width: 58px; min-height: 40px; border: 1px solid rgba(56,189,248,.38);
+  border-radius: 12px; color: #dff7ff; background: rgba(56,189,248,.13);
+  font: 700 12px/1 inherit; cursor: pointer;
+}
+.search-empty { padding: 36px 18px; color: var(--txt-dim); text-align: center; line-height: 1.7; }
+.search-empty small { font-size: 11px; opacity: .75; }
 .shop-item .thumb {
   width: 48px; height: 48px; border-radius: 12px; object-fit: contain;
   background: #fff; flex-shrink: 0; padding: 3px;
@@ -226,7 +249,7 @@ button, select, input, a { touch-action: manipulation; }
   font-family: inherit; font-size: 13px; outline: none;
 }
 .route-row select option { background: var(--panel-solid); }
-.route-actions { display: flex; gap: 8px; align-items: center; }
+.route-actions { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
 .ar-btn {
   border: 1px solid rgba(167,139,250,.5); cursor: pointer;
   background: rgba(167,139,250,.15); color: #c4b5fd;
@@ -236,6 +259,13 @@ button, select, input, a { touch-action: manipulation; }
 }
 .ar-btn:not(:disabled):hover { background: rgba(167,139,250,.3); box-shadow: 0 0 20px rgba(167,139,250,.4); }
 .ar-btn:disabled { opacity: .35; cursor: not-allowed; }
+.ar-primary {
+  min-height: 48px; border: 0; color: #061323;
+  background: linear-gradient(135deg, #67e8f9, #a78bfa);
+  box-shadow: 0 0 26px rgba(103,232,249,.3);
+  font-size: 14px;
+}
+.ar-primary:not(:disabled):hover { color: #061323; background: linear-gradient(135deg, #a5f3fc, #c4b5fd); }
 #route-info {
   margin-top: 12px; padding: 10px 12px;
   background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.3);
@@ -307,8 +337,12 @@ button, select, input, a { touch-action: manipulation; }
   .chip-btn { min-width: 44px; min-height: 44px; padding: 8px 10px; }
   #btn-list { font-size: 0; }
   #btn-list::after { content: '☰'; font-size: 20px; }
-  #filters {
+  #quick-destination {
     top: calc(max(8px, env(safe-area-inset-top)) + 48px); left: 10px;
+    width: calc(100vw - 76px); min-height: 50px; border-radius: 15px;
+  }
+  #filters {
+    top: calc(max(8px, env(safe-area-inset-top)) + 104px); left: 10px;
     max-width: calc(100vw - 20px); flex-wrap: nowrap; overflow-x: auto;
     padding: 2px 2px 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
@@ -332,8 +366,9 @@ button, select, input, a { touch-action: manipulation; }
   }
   .route-row { margin-bottom: 8px; }
   .route-row select { min-height: 48px; padding: 11px 12px; font-size: 16px; }
-  .route-actions { display: grid; grid-template-columns: 1.35fr 1fr auto; gap: 8px; }
+  .route-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   .route-actions > * { min-height: 48px; padding: 10px 12px; font-size: 14px; }
+  #btn-ar { grid-column: 1 / -1; min-height: 56px; font-size: 16px; }
   #route-info { max-height: 86px; overflow-y: auto; }
   #shop-card {
     left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto;
@@ -352,11 +387,11 @@ button, select, input, a { touch-action: manipulation; }
   }
   #drawer { width: 100vw; padding-top: env(safe-area-inset-top); }
   .shop-item { min-height: 64px; }
+  .shop-route-btn { min-width: 64px; min-height: 44px; }
   .brand-txt strong { font-size: 13px; }
 }
 
 @media (max-width: 380px) {
   .brand-txt { display: none; }
-  .route-actions { grid-template-columns: 1fr 1fr; }
-  #btn-clear { grid-column: 1 / -1; }
+  .route-actions { grid-template-columns: 1fr auto; }
 }

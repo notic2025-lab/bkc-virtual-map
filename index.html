@@ -26,10 +26,15 @@
     </div>
     <div class="topbar-actions">
       <button id="btn-night" class="chip-btn" title="昼/夜切替">🌙</button>
-      <button id="btn-walk" class="chip-btn" title="お散歩モード">🚶</button>
       <button id="btn-list" class="chip-btn" title="ショップ一覧">☰ ショップ</button>
     </div>
   </header>
+
+  <button id="quick-destination" type="button">
+    <span class="quick-search-icon">⌕</span>
+    <span><small>現在地から案内</small><strong>目的地・店舗を検索</strong></span>
+    <span class="quick-search-arrow">›</span>
+  </button>
 
   <!-- カテゴリフィルタ -->
   <div id="filters">
@@ -67,7 +72,7 @@
       <p id="card-en" class="card-en"></p>
       <p id="card-desc"></p>
       <div class="card-actions">
-        <button id="card-goto" class="primary-btn">🧭 ここへ行く</button>
+        <button id="card-goto" class="primary-btn">🧭 経路を見る</button>
         <a id="card-link" href="#" target="_blank" rel="noopener" class="ghost-btn">公式ページ ↗</a>
       </div>
     </div>
@@ -90,8 +95,8 @@
       <select id="route-to"></select>
     </div>
     <div class="route-actions">
-      <button id="btn-route" class="primary-btn">経路を表示</button>
-      <button id="btn-ar" class="ar-btn" disabled>📱 ARナビ</button>
+      <button id="btn-ar" class="ar-btn ar-primary" disabled>📱 ARナビを開始</button>
+      <button id="btn-walk" class="ghost-btn">🚶 3Dで歩く</button>
       <button id="btn-clear" class="ghost-btn small">クリア</button>
     </div>
     <div id="route-info" class="hidden"></div>
