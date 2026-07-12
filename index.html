@@ -25,7 +25,6 @@
       </div>
     </div>
     <div class="topbar-actions">
-      <button id="btn-night" class="chip-btn" title="昼/夜切替">🌙</button>
       <button id="btn-list" class="chip-btn" title="ショップ一覧">☰ ショップ</button>
     </div>
   </header>
@@ -110,6 +109,11 @@
   <div id="ar-view" class="hidden">
     <video id="ar-video" autoplay muted playsinline></video>
     <canvas id="ar-canvas"></canvas>
+    <!-- 進路が画面外にあるときの方向インジケーター -->
+    <div id="ar-turn" class="hidden">
+      <div id="ar-turn-arrow">➤</div>
+      <div id="ar-turn-text"></div>
+    </div>
     <div id="ar-hud">
       <div id="ar-instruction">経路を読み込み中…</div>
       <div id="ar-distance"></div>

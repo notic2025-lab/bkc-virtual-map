@@ -186,8 +186,13 @@ function loop(ts = 0) {
 
   const leg = legs[legIndex];
   if (leg) {
+    // 進路方位とデバイス方位の差（正=右、負=左、±πで背後）
+    let rel = leg.bearing - heading;
+    while (rel > Math.PI) rel -= Math.PI * 2;
+    while (rel < -Math.PI) rel += Math.PI * 2;
+
     // 矢印帯の向き = 経路方位 - デバイス方位（方位が取れない場合は正面固定）
-    const target = hasOrientation ? (leg.bearing - heading) : 0;
+    const target = hasOrientation ? rel : 0;
     // なめらかに回頭
     let d = target - arrowGroup.rotation.y;
     while (d > Math.PI) d -= Math.PI * 2;
@@ -201,8 +206,33 @@ function loop(ts = 0) {
       m.position.z = z;
       m.material.opacity = 0.2 + 0.7 * Math.min(1, Math.max(0, (-z - 2.5) / 3));
     }
+
+    // 進路が画面外にあるとき、向くべき方向を案内
+    updateTurnIndicator(hasOrientation ? rel : null);
   }
   renderer.render(scene, camera);
+}
+
+// 進路方位が視界の外にあるとき、向くべき方向の矢印とテキストを表示する
+function updateTurnIndicator(rel) {
+  const box = $('ar-turn');
+  if (!box) return;
+  const arrow = $('ar-turn-arrow');
+  const text = $('ar-turn-text');
+  // 方位が取れない、または進路がほぼ正面（視界内）なら非表示
+  if (rel == null || Math.abs(rel) < 0.5) { // 約28°以内は床の矢印で見える
+    box.classList.add('hidden');
+    return;
+  }
+  const deg = THREE.MathUtils.radToDeg(rel);
+  // '➤'(右向き基準)を、rel=0で上・右で右・背後で下 を指すよう回転
+  arrow.style.transform = `rotate(${deg - 90}deg)`;
+  let msg;
+  if (Math.abs(deg) >= 135) msg = '後ろを向いてください';
+  else if (deg > 0) msg = '右を向いてください';
+  else msg = '左を向いてください';
+  text.textContent = msg;
+  box.classList.remove('hidden');
 }
 
 function onResize() {

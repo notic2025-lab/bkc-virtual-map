@@ -57,9 +57,15 @@ controls.maxPolarAngle = Math.PI / 2.15;
 controls.minPolarAngle = 0.18;
 controls.minDistance = 12;
 controls.maxDistance = 220;
-controls.enablePan = !isMobileDevice;
+controls.enablePan = true;
+controls.screenSpacePanning = false; // 指のスライドで地図が平行移動（地図アプリ操作）
 controls.rotateSpeed = isMobileDevice ? 0.55 : 1;
+controls.panSpeed = isMobileDevice ? 1.1 : 1;
 controls.zoomSpeed = isMobileDevice ? 0.7 : 1;
+// タッチ操作: 1本指=平行移動 / 2本指=回転＋ピンチズーム
+controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+// マウス操作: 左ドラッグ=移動 / 右ドラッグ=回転 / ホイール=ズーム
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 controls.target.set(0, 0, -4);
 
 // ライト
@@ -827,25 +833,6 @@ $('btn-ar').addEventListener('click', () => {
   startAR(currentRoute, getPoi, METER_PER_UNIT);
 });
 
-// 昼夜切替
-$('btn-night').addEventListener('click', () => {
-  isNight = !isNight;
-  const s = isNight ? NIGHT : DAY;
-  const skyCol = isNight ? SKY.night : SKY.day;
-  skyMat.uniforms.topColor.value.set(skyCol.top);
-  skyMat.uniforms.bottomColor.value.set(skyCol.bottom);
-  refreshEnvironment(); // 反射環境も昼夜へ追従
-  scene.fog.color.set(s.fog);
-  hemi.intensity = s.hemi; sun.intensity = s.sun; amb.intensity = s.amb;
-  for (const shop of SHOPS) {
-    shop._mesh.material.emissiveIntensity = isNight ? 0.6 : 0.0;
-    shop._crown.material.emissiveIntensity = isNight ? 1.1 : 0.45;
-    shop._edges.material.opacity = isNight ? 1.0 : 0.9;
-  }
-  $('btn-night').textContent = isNight ? '☀️' : '🌙';
-  toast(isNight ? '夜モード ✨ お店が光ります' : '昼モード ☀️');
-});
-
 // ドロワー
 $('btn-list').addEventListener('click', () => $('drawer').classList.toggle('open'));
 $('drawer-close').addEventListener('click', () => $('drawer').classList.remove('open'));
@@ -1031,6 +1018,9 @@ canvas.addEventListener('pointerup', (e) => {
     const shop = hit.object.userData.shop;
     openCard(shop);
     focusShop(shop);
+  } else if (!$('shop-card').classList.contains('hidden')) {
+    // 店情報カードを開いている状態で地図の何もない場所をタップ → 地図に戻る
+    closeCard();
   }
 });
 

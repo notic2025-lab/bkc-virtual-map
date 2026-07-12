@@ -308,6 +308,29 @@ button, select, input, a { touch-action: manipulation; }
 #ar-distance { color: #a5f3fc; font-size: 13px; margin-bottom: 14px; text-shadow: 0 1px 6px #000; }
 .ar-controls { display: flex; gap: 10px; }
 
+/* 進路方向インジケーター（進路が画面外のとき表示） */
+#ar-turn {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  transition: opacity .2s ease;
+}
+#ar-turn.hidden { display: none; }
+#ar-turn-arrow {
+  font-size: 84px; line-height: 1; color: #38f0ff;
+  filter: drop-shadow(0 0 10px rgba(56,240,255,.9)) drop-shadow(0 2px 6px #000);
+  animation: arTurnPulse 1s ease-in-out infinite;
+  will-change: transform;
+}
+#ar-turn-text {
+  background: rgba(8,16,26,.82); color: #eafcff;
+  border: 1px solid rgba(56,240,255,.5); border-radius: 14px;
+  padding: 8px 18px; font-size: 17px; font-weight: 800;
+  text-shadow: 0 1px 4px #000; white-space: nowrap;
+}
+@keyframes arTurnPulse { 0%,100% { opacity: .75; } 50% { opacity: 1; } }
+
 /* ---------- ローダー ---------- */
 #loader {
   position: fixed; inset: 0; z-index: 200;
