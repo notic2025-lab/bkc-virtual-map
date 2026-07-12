@@ -4,20 +4,34 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import {
-  MAP_W, MAP_D, toWorld, CATEGORIES, SHOPS, PLACES, DECOR,
+  MAP_W, MAP_D, toWorld, CATEGORIES, SHOPS, PLACES, DECOR, FACILITIES,
   NAV_NODES, NAV_EDGES, ENTRY_NODE,
 } from './data.js';
 import { startAR } from './ar.js';
 
 const METER_PER_UNIT = 1.6; // 1ワールド単位 ≈ 1.6m（実寸感の目安）
+const isMobileDevice = matchMedia('(max-width: 640px), (pointer: coarse)').matches;
 
 // ------------------------------------------------------------
 // 基本セットアップ
 // ------------------------------------------------------------
 const canvas = document.getElementById('scene');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: !isMobileDevice,
+  powerPreference: 'high-performance',
+});
+let renderWidth = 0;
+let renderHeight = 0;
+function viewportSize() {
+  return {
+    width: Math.max(1, Math.round(window.visualViewport?.width || document.documentElement.clientWidth || innerWidth)),
+    height: Math.max(1, Math.round(window.visualViewport?.height || document.documentElement.clientHeight || innerHeight)),
+  };
+}
+const initialViewport = viewportSize();
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, isMobileDevice ? 1.35 : 2));
+renderer.setSize(initialViewport.width, initialViewport.height, false);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -33,15 +47,19 @@ let isNight = false;
 scene.background = new THREE.Color(DAY.bg);
 scene.fog = new THREE.Fog(DAY.fog, 160, 380);
 
-const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 800);
+const camera = new THREE.PerspectiveCamera(50, initialViewport.width / initialViewport.height, 0.1, 800);
 camera.position.set(0, 85, 78);
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.maxPolarAngle = Math.PI / 2.15;
+controls.minPolarAngle = 0.18;
 controls.minDistance = 12;
 controls.maxDistance = 220;
+controls.enablePan = !isMobileDevice;
+controls.rotateSpeed = isMobileDevice ? 0.55 : 1;
+controls.zoomSpeed = isMobileDevice ? 0.7 : 1;
 controls.target.set(0, 0, -4);
 
 // ライト
@@ -52,7 +70,7 @@ scene.add(amb);
 const sun = new THREE.DirectionalLight(0xfff4e0, DAY.sun);
 sun.position.set(-60, 90, 40);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(isMobileDevice ? 1024 : 2048, isMobileDevice ? 1024 : 2048);
 sun.shadow.camera.left = -90; sun.shadow.camera.right = 90;
 sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
 sun.shadow.camera.far = 300;
@@ -60,86 +78,113 @@ sun.shadow.bias = -0.0004;
 scene.add(sun);
 
 // ------------------------------------------------------------
-// 地面（キャンバステクスチャで通路・広場を描画）
+// 空（グラデーションスカイドーム）＋ 環境反射
+//   空間の奥行きと没入感（VR感）を出す核。フォグ非適用のShaderMaterialで
+//   遠景まで滑らかなグラデーションを描き、その色を反射環境にも使う。
+// ------------------------------------------------------------
+const SKY = {
+  day:   { top: 0x1f63ad, bottom: 0xd4ecf8 },
+  night: { top: 0x04060e, bottom: 0x162138 },
+};
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: {
+    topColor:    { value: new THREE.Color(SKY.day.top) },
+    bottomColor: { value: new THREE.Color(SKY.day.bottom) },
+    offset:      { value: 40 },
+    exponent:    { value: 0.8 },
+  },
+  vertexShader: /* glsl */`
+    varying vec3 vW;
+    void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 topColor, bottomColor; uniform float offset, exponent; varying vec3 vW;
+    void main(){ float h = normalize(vW + vec3(0.0, offset, 0.0)).y;
+      gl_FragColor = vec4(mix(bottomColor, topColor, pow(max(h, 0.0), exponent)), 1.0); }`,
+  side: THREE.BackSide,
+  depthWrite: false,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat);
+sky.renderOrder = -1;
+scene.add(sky);
+scene.background = null; // スカイドームが全天を覆うため単色背景は不要
+
+// スカイの色を反射環境（envMap）へ焼き込む
+const pmrem = new THREE.PMREMGenerator(renderer);
+let envRT = null;
+function refreshEnvironment() {
+  const envScene = new THREE.Scene();
+  const envSky = new THREE.Mesh(new THREE.SphereGeometry(50, 24, 12), skyMat);
+  envScene.add(envSky);
+  const prev = envRT;
+  envRT = pmrem.fromScene(envScene, 0.04);
+  scene.environment = envRT.texture;
+  envScene.remove(envSky);
+  prev?.dispose();
+}
+refreshEnvironment();
+
+// ------------------------------------------------------------
+// 地面（公式フロアマップをそのまま基準図として使用）
 // ------------------------------------------------------------
 function makeGroundTexture() {
-  const c = document.createElement('canvas');
-  c.width = 2048; c.height = Math.round(2048 * MAP_D / MAP_W);
-  const g = c.getContext('2d');
-  const px = (l) => l / 100 * c.width;
-  const py = (t) => t / 100 * c.height;
-
-  // ベース
-  g.fillStyle = '#e9edf1';
-  g.fillRect(0, 0, c.width, c.height);
-
-  // 敷地外周を少し暗く
-  g.strokeStyle = '#d3d9e0'; g.lineWidth = 40;
-  g.strokeRect(20, 20, c.width - 40, c.height - 40);
-
-  // 緑地帯（北側・西側 = せせらぎと並木）
-  g.fillStyle = '#cfe8cf';
-  g.fillRect(px(8), py(9), px(84), py(6));
-  g.fillRect(px(4), py(15), px(6), py(45));
-  // せせらぎ（水路）
-  g.fillStyle = '#aadcec';
-  g.fillRect(px(8), py(11.5), px(84), py(1.6));
-
-  // 通路（ナビグラフのエッジを描く）
-  g.strokeStyle = '#f8fafc';
-  g.lineCap = 'round'; g.lineJoin = 'round';
-  g.lineWidth = c.width * 0.045;
-  for (const [a, b] of NAV_EDGES) {
-    const A = NAV_NODES[a], B = NAV_NODES[b];
-    g.beginPath();
-    g.moveTo(px(A.left), py(A.top));
-    g.lineTo(px(B.left), py(B.top));
-    g.stroke();
-  }
-
-  // ナレッジプラザ（円形広場）
-  const plaza = PLACES.find(p => p.id === 'plaza').pin;
-  const grd = g.createRadialGradient(px(plaza.left), py(plaza.top), 0, px(plaza.left), py(plaza.top), c.width * 0.09);
-  grd.addColorStop(0, '#ffffff');
-  grd.addColorStop(1, '#eef3f7');
-  g.fillStyle = grd;
-  g.beginPath();
-  g.arc(px(plaza.left), py(plaza.top), c.width * 0.09, 0, Math.PI * 2);
-  g.fill();
-  g.strokeStyle = '#c9d4de'; g.lineWidth = 6;
-  g.stroke();
-
-  // 通路の点線センターライン
-  g.strokeStyle = '#dbe4ec'; g.lineWidth = 5; g.setLineDash([26, 30]);
-  for (const [a, b] of NAV_EDGES) {
-    const A = NAV_NODES[a], B = NAV_NODES[b];
-    g.beginPath();
-    g.moveTo(px(A.left), py(A.top));
-    g.lineTo(px(B.left), py(B.top));
-    g.stroke();
-  }
-  g.setLineDash([]);
-
-  const tex = new THREE.CanvasTexture(c);
+  // CanvasTextureは一部のスマホGPUで更新時に黒い帯が出るため、
+  // power-of-two化したJPEGをGPUへ一度だけ直接転送する。
+  const tex = new THREE.TextureLoader().load(
+    'assets/north1f-floor-1024.jpg',
+    undefined,
+    undefined,
+    () => toast('公式フロアマップ画像を読み込めませんでした'),
+  );
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  // ミップマップ＋異方性フィルタで、地図を斜めに傾けても細部が破綻せず滑らかに描画する。
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), isMobileDevice ? 4 : 8);
   return tex;
 }
 
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(MAP_W, MAP_D),
-  new THREE.MeshStandardMaterial({ map: makeGroundTexture(), roughness: 0.95 })
+  new THREE.MeshBasicMaterial({
+    map: makeGroundTexture(),
+    // 台座など下層メッシュとのZ-fighting（回転時に黒くチラつく現象）を防ぐため、
+    // フロアマップは常に手前へ描画されるよう深度バイアスを掛ける。
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  })
 );
 ground.rotation.x = -Math.PI / 2;
+ground.position.y = 0.02; // 下層メッシュより確実に上へ
 ground.receiveShadow = true;
+ground.renderOrder = 1;
 scene.add(ground);
 
-// 外周ベース（台座）
+// フロア全体を浮遊するデジタルツインのように見せる発光フレーム
+const framePoints = [
+  new THREE.Vector3(-MAP_W / 2, 0.22, -MAP_D / 2),
+  new THREE.Vector3(MAP_W / 2, 0.22, -MAP_D / 2),
+  new THREE.Vector3(MAP_W / 2, 0.22, MAP_D / 2),
+  new THREE.Vector3(-MAP_W / 2, 0.22, MAP_D / 2),
+];
+const mapFrame = new THREE.LineLoop(
+  new THREE.BufferGeometry().setFromPoints(framePoints),
+  new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.72 })
+);
+mapFrame.renderOrder = 4;
+scene.add(mapFrame);
+
+// 外周ベース（台座）: 上面をフロアマップ(y=0)より十分下げ、同一平面のZ-fightingを排除
 const base = new THREE.Mesh(
   new THREE.BoxGeometry(MAP_W + 6, 3, MAP_D + 6),
-  new THREE.MeshStandardMaterial({ color: 0x39424f, roughness: 0.9 })
+  new THREE.MeshStandardMaterial({
+    color: 0x101d2d, emissive: 0x08273a, emissiveIntensity: 0.55,
+    roughness: 0.62, metalness: 0.28,
+  })
 );
-base.position.y = -1.52;
+base.position.y = -2.4; // 上面 = -0.9（地面より0.9下）
 scene.add(base);
 
 // ------------------------------------------------------------
@@ -193,13 +238,21 @@ const labelSprites = [];
 const shopGroup = new THREE.Group();
 scene.add(shopGroup);
 
+const GLASS_OPACITY = 0.32;
+const PRIORITY_SHOPS = new Set(['the-lab', 'tullys', 'zara-home', 'actus', 'soholm']);
+
 for (const shop of SHOPS) {
   const { x, z } = toWorld(shop.pin.left, shop.pin.top);
   const col = CATEGORIES[shop.cat].color;
-  const geo = roundedBoxGeo(shop.size.w, shop.size.d, shop.size.h);
+  // 区画（w×d）と位置は公式座標。半透明ガラスとして立体化し、公式平面図が
+  // 透けて見えるようにすることで没入感と情報の正確さを両立する。
+  const h = shop.size.h ?? 4;
+  const geo = roundedBoxGeo(shop.size.w, shop.size.d, h);
   const mat = new THREE.MeshStandardMaterial({
-    color: col, roughness: 0.55, metalness: 0.05,
+    color: col, roughness: 0.12, metalness: 0.0,
+    transparent: true, opacity: GLASS_OPACITY,
     emissive: col, emissiveIntensity: 0.0,
+    envMapIntensity: 1.1, depthWrite: false,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(x, 0, z);
@@ -209,26 +262,46 @@ for (const shop of SHOPS) {
   shopGroup.add(mesh);
   shopMeshes.push(mesh);
 
-  // 白い縁取り（屋根のアクセント）
-  const roof = new THREE.Mesh(
-    roundedBoxGeo(shop.size.w * 0.86, shop.size.d * 0.86, 0.3),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 })
+  // 発光する輪郭フレーム（区画の外形＝ホログラム境界）
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(shop.size.w, h, shop.size.d)),
+    new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9 })
   );
-  roof.position.set(x, shop.size.h + 0.28, z);
-  shopGroup.add(roof);
+  edges.position.set(x, h / 2, z);
+  edges.renderOrder = 5;
+  shopGroup.add(edges);
+
+  // 屋上のカテゴリー色クラウン（発光アクセント）
+  const crown = new THREE.Mesh(
+    roundedBoxGeo(shop.size.w * 0.9, shop.size.d * 0.9, 0.35),
+    new THREE.MeshStandardMaterial({
+      color: col, emissive: col, emissiveIntensity: 0.45,
+      roughness: 0.3, metalness: 0.25, envMapIntensity: 1.1,
+    })
+  );
+  crown.position.set(x, h, z);
+  crown.castShadow = true;
+  shopGroup.add(crown);
 
   // ラベル
+  const labelY = h + 3.0;
   const label = makeLabelSprite(shop.name.length > 14 ? shop.en : shop.name, { border: CATEGORIES[shop.cat].css });
-  label.position.set(x, shop.size.h + 3.2, z);
-  label.userData = { type: 'shop', shop, baseY: shop.size.h + 3.2, phase: Math.random() * Math.PI * 2 };
+  label.position.set(x, labelY, z);
+  label.userData = { type: 'shop', shop, baseY: labelY, phase: Math.random() * Math.PI * 2 };
   shopGroup.add(label);
   labelSprites.push(label);
   shop._mesh = mesh;
+  shop._edges = edges;
+  shop._crown = crown;
   shop._label = label;
+  shop._categoryVisible = true;
   shop._pos = new THREE.Vector3(x, 0, z);
 }
 
 // 装飾建物
+const decorGroup = new THREE.Group();
+decorGroup.visible = false; // 推定形状の大型建物は公式平面図を隠すため非表示
+scene.add(decorGroup);
 for (const d of DECOR) {
   const { x, z } = toWorld(d.pin.left, d.pin.top);
   const mesh = new THREE.Mesh(
@@ -237,12 +310,12 @@ for (const d of DECOR) {
   );
   mesh.position.set(x, 0, z);
   mesh.castShadow = true; mesh.receiveShadow = true;
-  scene.add(mesh);
+  decorGroup.add(mesh);
   if (d.label) {
     const label = makeLabelSprite(d.name, { bg: '#3d3630', fg: '#fff', border: '#9a8b7d', scale: 0.85 });
     label.position.set(x, d.size.h + 3.4, z);
     label.userData = { baseY: d.size.h + 3.4, phase: Math.random() * 6 };
-    scene.add(label);
+    decorGroup.add(label);
     labelSprites.push(label);
   }
 }
@@ -251,6 +324,7 @@ for (const d of DECOR) {
 // 並木・広場の演出
 // ------------------------------------------------------------
 const treeGroup = new THREE.Group();
+treeGroup.visible = false; // 公式図にも植栽表現があるため、推定3D装飾は重ねない
 scene.add(treeGroup);
 {
   const trunkGeo = new THREE.CylinderGeometry(0.22, 0.3, 1.6, 6);
@@ -285,6 +359,7 @@ const plazaRing = new THREE.Mesh(
 plazaRing.rotation.x = Math.PI / 2;
 plazaRing.position.copy(plazaPos).setY(0.15);
 scene.add(plazaRing);
+plazaRing.visible = false;
 
 let particles;
 {
@@ -302,27 +377,161 @@ let particles;
     color: 0x7dd3fc, size: 0.35, transparent: true, opacity: 0.8, depthWrite: false,
   }));
   scene.add(particles);
+  particles.visible = false;
 }
 
-// エントランスゲート
-for (const p of PLACES.filter(p => p.kind === 'entrance')) {
-  const { x, z } = toWorld(p.pin.left, p.pin.top);
-  const gate = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x38bdf8, emissiveIntensity: 0.35, roughness: 0.4 });
-  const post = new THREE.CylinderGeometry(0.3, 0.3, 5, 10);
-  const p1 = new THREE.Mesh(post, mat); p1.position.set(-2.4, 2.5, 0);
-  const p2 = new THREE.Mesh(post, mat); p2.position.set(2.4, 2.5, 0);
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(6, 0.5, 0.6), mat); beam.position.y = 5.1;
-  gate.add(p1, p2, beam);
-  gate.position.set(x, 0, z);
-  scene.add(gate);
-  const label = makeLabelSprite(p.name.split('（')[0].replace(' エレベーター',''), { bg: '#123249', fg: '#a5f3fc', border: '#38bdf8', scale: 0.8 });
-  label.position.set(x, 7.4, z);
-  label.userData = { baseY: 7.4, phase: Math.random() * 6 };
-  scene.add(label);
-  labelSprites.push(label);
-  p._pos = new THREE.Vector3(x, 0, z);
+// ------------------------------------------------------------
+// 施設を3D化（エレベーター/エスカレーター/トイレ/インフォ/AED/駐車場/連絡通路）
+//   公式マップのピクトグラム位置に立体モデルを重ね、平面アイコンと3Dの混在を解消。
+// ------------------------------------------------------------
+function makeBadgeSprite(glyph, color = '#38bdf8') {
+  const s = 128, c = document.createElement('canvas'); c.width = c.height = s;
+  const ctx = c.getContext('2d');
+  ctx.beginPath(); ctx.arc(s / 2, s / 2, s / 2 - 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#0d1626'; ctx.fill();
+  ctx.lineWidth = 8; ctx.strokeStyle = color; ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 ${glyph.length > 1 ? 50 : 68}px "Hiragino Kaku Gothic ProN", Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(glyph, s / 2, s / 2 + 4);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+  sp.scale.set(3.0, 3.0, 1); sp.renderOrder = 12;
+  return sp;
 }
+
+const FAC = {
+  elevator:  { col: 0x38bdf8, css: '#38bdf8', glyph: '⇅' },
+  escalator: { col: 0xf59e0b, css: '#f59e0b', glyph: '⇗' },
+  restroom:  { col: 0x818cf8, css: '#818cf8', glyph: 'WC' },
+  info:      { col: 0x22c55e, css: '#22c55e', glyph: 'i' },
+  aed:       { col: 0xef4444, css: '#f87171', glyph: '＋' },
+  parking:   { col: 0x94a3b8, css: '#cbd5e1', glyph: 'P' },
+  connector: { col: 0x38bdf8, css: '#7dd3fc', glyph: '↔' },
+};
+const facSteel = (col) => new THREE.MeshStandardMaterial({ color: col, roughness: 0.3, metalness: 0.6, envMapIntensity: 1.1 });
+const facGlass = (col) => new THREE.MeshStandardMaterial({ color: col, roughness: 0.1, metalness: 0, transparent: true, opacity: 0.34, emissive: col, emissiveIntensity: 0.18, envMapIntensity: 1.1, depthWrite: false });
+
+const facilityGroup = new THREE.Group();
+facilityGroup.visible = false;
+scene.add(facilityGroup);
+
+// 公式図のピクトグラムを優先し、推定3D施設モデルは生成しない。
+for (const f of []) {
+  const { x, z } = toWorld(f.pin.left, f.pin.top);
+  const def = FAC[f.type];
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  let topY = 5;
+
+  // 足元マーカー台座（フロア色パッドで印刷アイコンをマスクし、発光リングで強調）
+  const padR = { elevator: 2.7, escalator: 2.3, restroom: 3.0, info: 2.0, aed: 1.4, parking: 3.2, connector: 2.6 }[f.type] || 2.2;
+  const pad = new THREE.Mesh(
+    new THREE.CircleGeometry(padR, 44),
+    new THREE.MeshBasicMaterial({ color: 0xeceef1, transparent: true, opacity: 0.92, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 })
+  );
+  pad.rotation.x = -Math.PI / 2; pad.position.y = 0.05; pad.renderOrder = 2;
+  g.add(pad);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(padR - 0.2, padR, 48),
+    new THREE.MeshBasicMaterial({ color: def.col, transparent: true, opacity: 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 })
+  );
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; ring.renderOrder = 3;
+  g.add(ring);
+
+  if (f.type === 'elevator') {
+    const w = 3.8, h = 6.5;
+    const shaft = new THREE.Mesh(roundedBoxGeo(w, w, h, 0.5), facGlass(def.col));
+    shaft.castShadow = true; g.add(shaft);
+    const frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, w)), new THREE.LineBasicMaterial({ color: def.col }));
+    frame.position.y = h / 2; g.add(frame);
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.5, h * 0.62),
+      new THREE.MeshStandardMaterial({ color: 0x1b2a3a, metalness: 0.7, roughness: 0.3, envMapIntensity: 1 }));
+    door.position.set(0, h * 0.35, w / 2 + 0.02); g.add(door);
+    const cap = new THREE.Mesh(roundedBoxGeo(w * 0.96, w * 0.96, 0.4, 0.35), facSteel(def.col));
+    cap.position.y = h; cap.castShadow = true; g.add(cap);
+    topY = h + 0.4;
+  } else if (f.type === 'escalator') {
+    const L = 7, W = 2.4;
+    const ramp = new THREE.Group();
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(L, 0.4, W), facSteel(def.col));
+    belt.castShadow = true; ramp.add(belt);
+    for (let i = -3; i <= 3; i++) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, W * 0.9),
+        new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.5, roughness: 0.5 }));
+      st.position.set(i * 0.9, 0.25, 0); ramp.add(st);
+    }
+    for (const sgn of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(L, 0.18, 0.18), facSteel(0x111827));
+      rail.position.set(0, 0.95, sgn * W / 2); ramp.add(rail);
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(L, 0.9, 0.06), facGlass(def.col));
+      glass.position.set(0, 0.5, sgn * W / 2); ramp.add(glass);
+    }
+    ramp.rotation.z = THREE.MathUtils.degToRad(14);
+    ramp.position.y = 1.0;
+    g.add(ramp);
+    g.rotation.y = THREE.MathUtils.degToRad(f.angle || 0);
+    topY = 2.6;
+  } else if (f.type === 'restroom') {
+    const w = 4, d = 3, h = 3.2;
+    const box = new THREE.Mesh(roundedBoxGeo(w, d, h, 0.5), facGlass(def.col));
+    box.castShadow = true; g.add(box);
+    const frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d)), new THREE.LineBasicMaterial({ color: def.col }));
+    frame.position.y = h / 2; g.add(frame);
+    topY = h + 0.4;
+  } else if (f.type === 'info') {
+    const desk = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.0, 1.4, 20), facSteel(0xe2e8f0));
+    desk.position.y = 0.7; desk.castShadow = true; g.add(desk);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 3.4, 16), facGlass(def.col));
+    post.position.y = 2.5; g.add(post);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12),
+      new THREE.MeshStandardMaterial({ color: def.col, emissive: def.col, emissiveIntensity: 0.85, roughness: 0.3 }));
+    dot.position.y = 4.5; g.add(dot);
+    topY = 5.1;
+  } else if (f.type === 'aed') {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.4, 10), facSteel(0x64748b));
+    post.position.y = 1.2; g.add(post);
+    const box = new THREE.Mesh(roundedBoxGeo(1.7, 0.9, 1.9, 0.2),
+      new THREE.MeshStandardMaterial({ color: def.col, emissive: def.col, emissiveIntensity: 0.5, roughness: 0.4, metalness: 0.2 }));
+    box.position.y = 3.0; box.castShadow = true; g.add(box);
+    topY = 4.2;
+  } else if (f.type === 'parking') {
+    const mat = facSteel(def.col);
+    const postGeo = new THREE.CylinderGeometry(0.35, 0.35, 5.5, 12);
+    const p1 = new THREE.Mesh(postGeo, mat); p1.position.set(-3, 2.75, 0); p1.castShadow = true;
+    const p2 = new THREE.Mesh(postGeo, mat); p2.position.set(3, 2.75, 0); p2.castShadow = true;
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(7, 0.9, 0.9),
+      new THREE.MeshStandardMaterial({ color: def.col, emissive: def.col, emissiveIntensity: 0.35, roughness: 0.4, metalness: 0.3 }));
+    beam.position.y = 5.6; g.add(p1, p2, beam);
+    topY = 6.6;
+  } else if (f.type === 'connector') {
+    const sm = facSteel(def.col);
+    const postGeo = new THREE.CylinderGeometry(0.3, 0.3, 5, 10);
+    const p1 = new THREE.Mesh(postGeo, sm); p1.position.set(-2.2, 2.5, 0); p1.castShadow = true;
+    const p2 = new THREE.Mesh(postGeo, sm); p2.position.set(2.2, 2.5, 0); p2.castShadow = true;
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(5, 0.5, 0.6), sm); beam.position.y = 5.1;
+    g.add(p1, p2, beam);
+    topY = 6.0;
+  }
+
+  // 浮遊ピクトグラム（常に正面を向くホログラムバッジ）
+  const badge = makeBadgeSprite(def.glyph, def.css);
+  badge.position.y = topY + 1.6;
+  badge.userData = { baseY: topY + 1.6, phase: Math.random() * 6 };
+  g.add(badge); labelSprites.push(badge);
+
+  // 名称ラベル
+  if (f.name) {
+    const label = makeLabelSprite(f.name, { bg: '#0d1626', fg: '#e6f6ff', border: def.css, scale: 0.68 });
+    label.position.y = topY + 3.5;
+    label.userData = { baseY: topY + 3.5, phase: Math.random() * 6 };
+    g.add(label); labelSprites.push(label);
+  }
+
+  facilityGroup.add(g);
+}
+
+// 経路探索に使う各PLACEのワールド座標を確定
 PLACES.forEach(p => { if (!p._pos) { const { x, z } = toWorld(p.pin.left, p.pin.top); p._pos = new THREE.Vector3(x, 0, z); } });
 
 // ------------------------------------------------------------
@@ -335,9 +544,11 @@ const avatar = new THREE.Group();
   body.position.y = 1.15; body.castShadow = true;
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 18, 14), new THREE.MeshStandardMaterial({ color: 0xffd9a0, roughness: 0.6 }));
   head.position.y = 2.35;
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.09, 10, 40), new THREE.MeshBasicMaterial({ color: 0x34d399 }));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.14, 10, 40), new THREE.MeshBasicMaterial({ color: 0x10b981 }));
   ring.rotation.x = Math.PI / 2; ring.position.y = 0.12;
-  avatar.add(body, head, ring);
+  const hereLabel = makeLabelSprite('現在地', { bg: '#063f36', fg: '#ffffff', border: '#10b981', scale: 0.72 });
+  hereLabel.position.y = 4.2;
+  avatar.add(body, head, ring, hereLabel);
   avatar.userData.ring = ring;
 }
 scene.add(avatar);
@@ -409,13 +620,15 @@ function buildRoutePoints(fromId, toId) {
 let routeObjects = [];
 let routeCurve = null;
 let routeArrows = [];
+let routeDots = [];
 let currentRoute = null; // { fromId, toId, points, lengthM }
 
 function clearRoute() {
   for (const o of routeObjects) { scene.remove(o); o.geometry?.dispose(); o.material?.dispose(); }
-  routeObjects = []; routeArrows = []; routeCurve = null; currentRoute = null;
+  routeObjects = []; routeArrows = []; routeDots = []; routeCurve = null; currentRoute = null;
   document.getElementById('route-info').classList.add('hidden');
   document.getElementById('btn-ar').disabled = true;
+  document.getElementById('route-panel-title').textContent = '経路を検索';
 }
 
 function showRoute(fromId, toId) {
@@ -423,25 +636,39 @@ function showRoute(fromId, toId) {
   const points = buildRoutePoints(fromId, toId);
   if (!points || points.length < 2) { toast('経路が見つかりませんでした'); return false; }
 
-  const lifted = points.map(p => p.clone().setY(0.4));
+  const lifted = points.map(p => p.clone().setY(0.62));
   routeCurve = new THREE.CatmullRomCurve3(lifted, false, 'centripetal', 0.15);
   const len = routeCurve.getLength();
 
-  // 発光チューブ
-  const tube = new THREE.Mesh(
-    new THREE.TubeGeometry(routeCurve, Math.max(40, points.length * 12), 0.45, 10, false),
-    new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.55 })
+  // 点線の土台。公式図を隠さない細いガイドだけ残す。
+  const routeOutline = new THREE.Mesh(
+    new THREE.TubeGeometry(routeCurve, Math.max(40, points.length * 12), 0.34, 8, false),
+    new THREE.MeshBasicMaterial({ color: 0x07506c, transparent: true, opacity: 0.38, depthTest: false })
   );
-  scene.add(tube); routeObjects.push(tube);
+  routeOutline.renderOrder = 18;
+  scene.add(routeOutline); routeObjects.push(routeOutline);
+
+  // 発光する点を流し、経路と進行方向を同時に伝える
+  const dotCount = Math.max(10, Math.floor(len / 2.6));
+  for (let i = 0; i < dotCount; i++) {
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(i % 4 === 0 ? 0.46 : 0.32, 10, 8),
+      new THREE.MeshBasicMaterial({ color: i % 4 === 0 ? 0xffffff : 0x22d3ee, depthTest: false })
+    );
+    dot.userData.offset = i / dotCount;
+    dot.renderOrder = 19;
+    scene.add(dot); routeObjects.push(dot); routeDots.push(dot);
+  }
 
   // 進行方向シェブロン（動く矢印）
-  const coneGeo = new THREE.ConeGeometry(0.55, 1.3, 8);
+  const coneGeo = new THREE.ConeGeometry(0.7, 1.65, 8);
   coneGeo.rotateX(Math.PI / 2);
-  const coneMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const n = Math.max(6, Math.floor(len / 6));
+  const coneMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
+  const n = Math.max(4, Math.floor(len / 12));
   for (let i = 0; i < n; i++) {
     const cone = new THREE.Mesh(coneGeo, coneMat);
     cone.userData.offset = i / n;
+    cone.renderOrder = 20;
     scene.add(cone);
     routeObjects.push(cone); routeArrows.push(cone);
   }
@@ -474,6 +701,7 @@ function showRoute(fromId, toId) {
   info.innerHTML = `<b>${esc(from.name)}</b> → <b>${esc(to.name)}</b><br>距離 約${lengthM}m ・ 徒歩 約${mins}分`;
   info.classList.remove('hidden');
   document.getElementById('btn-ar').disabled = false;
+  document.getElementById('route-panel-title').textContent = `${to.name} への経路`;
 
   // 経路全体が見えるようにカメラ移動
   const box = new THREE.Box3().setFromPoints(points);
@@ -556,13 +784,40 @@ function resolveFrom(v) { return v === '__here__' ? avatarPlaceId : v; }
 function syncFromSelect() { /* 現在地表示は __here__ のまま */ }
 fillSelects();
 
+const routePanel = $('route-panel');
+const routePanelToggle = $('route-panel-toggle');
+function setRoutePanelCollapsed(collapsed) {
+  routePanel.classList.toggle('collapsed', collapsed);
+  routePanelToggle.setAttribute('aria-expanded', String(!collapsed));
+}
+routePanelToggle.addEventListener('click', () => setRoutePanelCollapsed(!routePanel.classList.contains('collapsed')));
+if (isMobileDevice) setRoutePanelCollapsed(true);
+
+// ピンチが難しい場合でも使える地図操作
+function zoomMap(factor) {
+  const offset = camera.position.clone().sub(controls.target);
+  const distance = THREE.MathUtils.clamp(offset.length() * factor, controls.minDistance, controls.maxDistance);
+  flyTo(controls.target.clone().add(offset.setLength(distance)), controls.target.clone(), 0.28);
+}
+$('btn-zoom-in').addEventListener('click', () => zoomMap(0.72));
+$('btn-zoom-out').addEventListener('click', () => zoomMap(1.38));
+$('btn-north').addEventListener('click', () => {
+  const distance = camera.position.distanceTo(controls.target);
+  const height = Math.max(34, distance * 0.78);
+  flyTo(controls.target.clone().add(new THREE.Vector3(0, height, distance * 0.58)), controls.target.clone(), 0.65);
+  toast('北を上に戻しました');
+});
+
 $('btn-route').addEventListener('click', () => {
   const from = resolveFrom($('route-from').value);
   const to = $('route-to').value;
   if (from === to) { toast('出発地と目的地が同じです'); return; }
-  if (showRoute(from, to)) toast('経路を表示しました。🚶ボタンでお散歩できます');
+  if (showRoute(from, to)) {
+    if (matchMedia('(max-width: 640px)').matches) setRoutePanelCollapsed(true);
+    toast('経路を表示しました。下のバーからARナビも選べます');
+  }
 });
-$('btn-clear').addEventListener('click', () => { clearRoute(); stopWalk(); });
+$('btn-clear').addEventListener('click', () => { clearRoute(); stopWalk(); setRoutePanelCollapsed(false); });
 $('btn-walk').addEventListener('click', () => walking ? stopWalk() : startWalk());
 $('btn-ar').addEventListener('click', () => {
   if (!currentRoute) return;
@@ -573,10 +828,17 @@ $('btn-ar').addEventListener('click', () => {
 $('btn-night').addEventListener('click', () => {
   isNight = !isNight;
   const s = isNight ? NIGHT : DAY;
-  scene.background.set(s.bg);
+  const skyCol = isNight ? SKY.night : SKY.day;
+  skyMat.uniforms.topColor.value.set(skyCol.top);
+  skyMat.uniforms.bottomColor.value.set(skyCol.bottom);
+  refreshEnvironment(); // 反射環境も昼夜へ追従
   scene.fog.color.set(s.fog);
   hemi.intensity = s.hemi; sun.intensity = s.sun; amb.intensity = s.amb;
-  for (const m of shopMeshes) m.material.emissiveIntensity = isNight ? 0.5 : 0.0;
+  for (const shop of SHOPS) {
+    shop._mesh.material.emissiveIntensity = isNight ? 0.6 : 0.0;
+    shop._crown.material.emissiveIntensity = isNight ? 1.1 : 0.45;
+    shop._edges.material.opacity = isNight ? 1.0 : 0.9;
+  }
   $('btn-night').textContent = isNight ? '☀️' : '🌙';
   toast(isNight ? '夜モード ✨ お店が光ります' : '昼モード ☀️');
 });
@@ -614,9 +876,7 @@ document.querySelectorAll('.filter-chip').forEach(btn => {
     renderShopList($('search').value, activeCat);
     for (const s of SHOPS) {
       const on = activeCat === 'all' || s.cat === activeCat;
-      s._mesh.material.opacity = on ? 1 : 0.15;
-      s._mesh.material.transparent = !on;
-      s._label.visible = on;
+      s._categoryVisible = on;
     }
   });
 });
@@ -634,15 +894,27 @@ function openCard(shop) {
   $('card-desc').textContent = shop.desc;
   $('card-link').href = shop.url;
   $('shop-card').classList.remove('hidden');
+  routePanel.classList.add('card-covered');
+  $('map-controls').classList.add('hidden');
 }
-$('card-close').addEventListener('click', () => $('shop-card').classList.add('hidden'));
+function closeCard() {
+  $('shop-card').classList.add('hidden');
+  routePanel.classList.remove('card-covered');
+  $('map-controls').classList.remove('hidden');
+}
+$('card-close').addEventListener('click', (event) => {
+  event.stopPropagation();
+  closeCard();
+});
+addEventListener('keydown', (event) => { if (event.key === 'Escape') closeCard(); });
 $('card-goto').addEventListener('click', () => {
   if (!cardShop) return;
   $('route-to').value = cardShop.id;
   const from = resolveFrom($('route-from').value);
   if (from === cardShop.id) { toast('すでに目的地にいます'); return; }
   if (showRoute(from, cardShop.id)) {
-    $('shop-card').classList.add('hidden');
+    closeCard();
+    if (matchMedia('(max-width: 640px)').matches) setRoutePanelCollapsed(true);
     toast(`${cardShop.name} への経路を表示しました 🧭`);
   }
 });
@@ -659,13 +931,15 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let downAt = null;
 canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointercancel', () => { downAt = null; });
 canvas.addEventListener('pointerup', (e) => {
   if (!downAt) return;
   const dx = e.clientX - downAt[0], dy = e.clientY - downAt[1];
   downAt = null;
   if (dx * dx + dy * dy > 36) return; // ドラッグは無視
-  pointer.x = (e.clientX / innerWidth) * 2 - 1;
-  pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects([...shopMeshes, ...labelSprites.filter(l => l.userData.shop)], false);
   const hit = hits.find(h => h.object.userData?.shop || h.object.userData?.type === 'shop');
@@ -679,14 +953,16 @@ canvas.addEventListener('pointerup', (e) => {
 // ホバーで建物を光らせる
 let hovered = null;
 canvas.addEventListener('pointermove', (e) => {
-  pointer.x = (e.clientX / innerWidth) * 2 - 1;
-  pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+  if (e.pointerType === 'touch') return;
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(shopMeshes, false);
   const m = hits[0]?.object ?? null;
-  if (hovered && hovered !== m) hovered.material.emissiveIntensity = isNight ? 0.5 : 0.0;
+  if (hovered && hovered !== m) hovered.material.emissiveIntensity = isNight ? 0.6 : 0.0;
   hovered = m;
-  if (hovered) hovered.material.emissiveIntensity = 0.85;
+  if (hovered) hovered.material.emissiveIntensity = 1.0;
   canvas.style.cursor = hovered ? 'pointer' : 'grab';
 });
 
@@ -698,6 +974,27 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
   const t = clock.elapsedTime;
+
+  // 視点に応じた情報量の最適化（Overview / Area / Detail）
+  const viewDistance = camera.position.distanceTo(controls.target);
+  const viewAngle = controls.getPolarAngle();
+  const detailView = viewDistance < 48 && viewAngle < 1.12;
+  const areaView = viewDistance < 74;
+  for (const s of SHOPS) {
+    const on = s._categoryVisible;
+    const selected = cardShop === s || hovered === s._mesh;
+    const showLabel = on && (selected || detailView || (areaView && PRIORITY_SHOPS.has(s.id)));
+    s._label.visible = showLabel;
+    s._edges.visible = on;
+    s._edges.material.opacity = selected ? 1 : detailView ? 0.8 : areaView ? 0.48 : 0.24;
+    s._crown.visible = on && (selected || detailView || areaView);
+    s._crown.material.transparent = true;
+    s._crown.material.opacity = selected ? 1 : detailView ? 0.82 : 0.46;
+    s._mesh.material.opacity = on
+      ? (selected ? 0.56 : detailView ? 0.38 : areaView ? 0.24 : 0.1)
+      : 0.015;
+  }
+  $('zoom-hint').classList.toggle('hidden', areaView);
 
   // ラベル浮遊
   for (const l of labelSprites) {
@@ -718,6 +1015,12 @@ function animate() {
 
   // 経路の矢印を流す
   if (routeCurve) {
+    for (const dot of routeDots) {
+      const u = (dot.userData.offset + t * 0.055) % 1;
+      dot.position.copy(routeCurve.getPointAt(u)).setY(0.88);
+      const pulse = 0.88 + Math.sin(t * 4 + dot.userData.offset * 18) * 0.18;
+      dot.scale.setScalar(pulse);
+    }
     for (const cone of routeArrows) {
       const u = (cone.userData.offset + t * 0.06) % 1;
       const p = routeCurve.getPointAt(u);
@@ -761,10 +1064,31 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
+let resizeFrame = 0;
+function resizeRenderer() {
+  cancelAnimationFrame(resizeFrame);
+  resizeFrame = requestAnimationFrame(() => {
+  const { width, height } = viewportSize();
+  if (width === renderWidth && height === renderHeight) return;
+  renderWidth = width; renderHeight = height;
+  camera.aspect = width / height;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, isMobileDevice ? 1.35 : 2));
+  renderer.setSize(width, height, false);
+  });
+}
+addEventListener('resize', resizeRenderer, { passive: true });
+addEventListener('orientationchange', resizeRenderer, { passive: true });
+window.visualViewport?.addEventListener('resize', resizeRenderer, { passive: true });
+resizeRenderer();
+
+canvas.addEventListener('webglcontextlost', (event) => {
+  event.preventDefault();
+  toast('描画を復旧しています…', 1800);
+});
+canvas.addEventListener('webglcontextrestored', () => {
+  resizeRenderer();
+  toast('描画を復旧しました');
 });
 
 // 起動
@@ -774,5 +1098,5 @@ setTimeout(() => {
   toast('ようこそ！グランフロント大阪 北館1F バーチャルマップへ 🏙️ お店をタップしてみてください');
   // オープニングカメラ演出
   camera.position.set(-70, 120, 130);
-  flyTo(new THREE.Vector3(0, 62, 66), new THREE.Vector3(0, 0, -4), 2.4);
+  flyTo(new THREE.Vector3(0, 54, 64), new THREE.Vector3(0, 0, -2), 2.4);
 }, 600);

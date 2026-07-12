@@ -5,13 +5,14 @@
 // ============================================================
 
 export const MAP_W = 123;   // ワールド幅 (x)
-export const MAP_D = 93;    // ワールド奥行 (z)
+export const MAP_D = 70;    // 公式図のフロア部分（元画像の上700px）
+const FLOOR_CROP_TOP_PERCENT = 700 / 930 * 100;
 
 // percent座標 → ワールド座標
 export function toWorld(left, top) {
   return {
     x: (left - 50) / 100 * MAP_W,
-    z: (top - 50) / 100 * MAP_D,
+    z: (top / FLOOR_CROP_TOP_PERCENT - 0.5) * MAP_D,
   };
 }
 
@@ -146,6 +147,27 @@ export const PLACES = [
   { id: 'ent-south', name: '南館 連絡通路', kind: 'entrance', pin: { left: 7, top: 19 } },
   { id: 'info', name: 'インフォメーション', kind: 'info', pin: { left: 43, top: 47 } },
   { id: 'plaza', name: 'ナレッジプラザ（吹き抜け広場）', kind: 'plaza', pin: { left: 52, top: 38 } },
+];
+
+// ---- 施設ピクトグラム（公式フロアマップ上の位置を3D化。座標は公式マップ準拠）----
+// type: elevator / escalator / restroom / info / aed / parking / connector
+export const FACILITIES = [
+  { type: 'elevator',  name: '北1',         pin: { left: 34, top: 8 } },
+  { type: 'elevator',  name: '北3',         pin: { left: 66, top: 8 } },
+  { type: 'elevator',  name: '北4',         pin: { left: 5,  top: 40 } },
+  { type: 'elevator',  name: '北2（正面）',  pin: { left: 40, top: 71 } },
+  { type: 'elevator',  name: 'タワーB',      pin: { left: 30, top: 71 } },
+  { type: 'elevator',  name: 'タワーC',      pin: { left: 71, top: 71 } },
+  { type: 'escalator', name: '',            pin: { left: 17, top: 31 }, angle: 25 },
+  { type: 'escalator', name: '',            pin: { left: 23, top: 46 }, angle: 100 },
+  { type: 'escalator', name: '',            pin: { left: 35, top: 46 }, angle: 100 },
+  { type: 'escalator', name: '',            pin: { left: 63, top: 35 }, angle: 20 },
+  { type: 'escalator', name: '',            pin: { left: 50, top: 53 }, angle: 100 },
+  { type: 'restroom',  name: 'トイレ',       pin: { left: 68, top: 41 } },
+  { type: 'info',      name: 'インフォメーション', pin: { left: 43, top: 48 } },
+  { type: 'aed',       name: 'AED',         pin: { left: 42, top: 45 } },
+  { type: 'parking',   name: '地下駐車場',    pin: { left: 58, top: 63 } },
+  { type: 'connector', name: '南館へ',       pin: { left: 5,  top: 20 } },
 ];
 
 // ---- 装飾用ブロック（クリック不可・雰囲気用）----

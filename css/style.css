@@ -21,6 +21,7 @@ body {
   color: var(--txt);
   overflow: hidden;
   height: 100dvh;
+  overscroll-behavior: none;
 }
 
 #app { position: fixed; inset: 0; }
@@ -55,6 +56,7 @@ body {
   backdrop-filter: blur(12px);
   transition: all .2s;
 }
+button, select, input, a { touch-action: manipulation; }
 .chip-btn:hover { border-color: var(--accent); box-shadow: var(--glow); transform: translateY(-1px); }
 .chip-btn.active { background: var(--accent); color: #08101e; font-weight: 700; }
 .chip-btn.danger { border-color: rgba(248,113,113,.5); color: #fca5a5; }
@@ -75,6 +77,31 @@ body {
 .filter-chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .filter-chip:hover { color: var(--txt); border-color: var(--accent); }
 .filter-chip.active { color: var(--txt); border-color: var(--accent); background: rgba(56,189,248,.15); font-weight: 700; }
+
+/* ---------- 地図操作 ---------- */
+#map-controls {
+  position: absolute; z-index: 18; right: 18px; top: 50%; transform: translateY(-50%);
+  display: grid; gap: 8px; transition: opacity .2s;
+}
+#map-controls button {
+  display: grid; place-items: center; width: 46px; height: 46px;
+  border: 1px solid var(--line); border-radius: 14px; cursor: pointer;
+  color: var(--txt); background: var(--panel); backdrop-filter: blur(14px);
+  font: 700 22px/1 inherit; box-shadow: 0 5px 18px rgba(0,0,0,.22);
+}
+#map-controls button:active { transform: scale(.94); background: rgba(56,189,248,.25); }
+#btn-north span { color: #f87171; font-size: 18px; }
+#btn-north small { font-size: 10px; margin-top: -5px; }
+#map-controls.hidden { opacity: 0; pointer-events: none; }
+#zoom-hint {
+  position: absolute; z-index: 14; left: 50%; top: 132px; transform: translateX(-50%);
+  padding: 8px 13px; border: 1px solid rgba(56,189,248,.25); border-radius: 999px;
+  color: #dff7ff; background: rgba(9,20,35,.68); backdrop-filter: blur(12px);
+  font-size: 11px; letter-spacing: .02em; pointer-events: none;
+  transition: opacity .25s, transform .25s;
+}
+#zoom-hint span { color: var(--accent); font-weight: 800; }
+#zoom-hint.hidden { opacity: 0; transform: translate(-50%, -6px); }
 
 /* ---------- ドロワー ---------- */
 #drawer {
@@ -180,7 +207,15 @@ body {
   border: 1px solid var(--line); border-radius: 20px;
   padding: 16px;
   box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  transition: transform .28s ease, padding .28s ease;
 }
+#route-panel-toggle {
+  display: none;
+  width: 100%; min-height: 44px; border: 0; color: var(--txt);
+  background: transparent; font: 700 14px/1.2 inherit; cursor: pointer;
+}
+.route-handle { width: 38px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.35); }
+.route-toggle-icon { margin-left: auto; font-size: 20px; transition: transform .25s ease; }
 .route-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
 .dot-start { background: #34d399; box-shadow: 0 0 10px #34d39988; }
@@ -263,8 +298,65 @@ body {
 
 /* ---------- モバイル ---------- */
 @media (max-width: 640px) {
-  #filters { max-width: calc(100vw - 36px); top: 70px; }
-  #route-panel { right: 12px; left: 12px; bottom: 12px; width: auto; }
-  #shop-card { left: 12px; right: 12px; bottom: 158px; width: auto; }
+  :root { font-size: 16px; }
+  #topbar { padding: max(8px, env(safe-area-inset-top)) 12px 8px; align-items: flex-start; }
+  .brand { gap: 8px; }
+  .brand-mark { width: 40px; height: 40px; border-radius: 12px; font-size: 13px; }
+  .brand-txt small { display: none; }
+  .topbar-actions { gap: 6px; }
+  .chip-btn { min-width: 44px; min-height: 44px; padding: 8px 10px; }
+  #btn-list { font-size: 0; }
+  #btn-list::after { content: '☰'; font-size: 20px; }
+  #filters {
+    top: calc(max(8px, env(safe-area-inset-top)) + 48px); left: 10px;
+    max-width: calc(100vw - 20px); flex-wrap: nowrap; overflow-x: auto;
+    padding: 2px 2px 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  #filters::-webkit-scrollbar { display: none; }
+  .filter-chip { min-height: 42px; padding: 8px 13px; flex: 0 0 auto; font-size: 12px; }
+  #zoom-hint { top: calc(max(8px, env(safe-area-inset-top)) + 104px); white-space: nowrap; }
+  #map-controls { right: 10px; top: 45%; gap: 6px; }
+  #map-controls button { width: 48px; height: 48px; border-radius: 15px; }
+  #route-panel {
+    right: 8px; left: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto;
+    padding: 6px 14px 14px; border-radius: 22px; max-height: min(70dvh, 520px);
+  }
+  #route-panel-toggle { display: flex; align-items: center; gap: 10px; }
+  #route-panel-body { overflow: hidden; max-height: 440px; opacity: 1; transition: max-height .28s ease, opacity .2s ease; }
+  #route-panel.collapsed { padding-bottom: 6px; }
+  #route-panel.collapsed #route-panel-body { max-height: 0; opacity: 0; pointer-events: none; }
+  #route-panel.collapsed .route-toggle-icon { transform: rotate(180deg); }
+  #route-panel.card-covered {
+    transform: translateY(calc(100% + 24px));
+    pointer-events: none;
+  }
+  .route-row { margin-bottom: 8px; }
+  .route-row select { min-height: 48px; padding: 11px 12px; font-size: 16px; }
+  .route-actions { display: grid; grid-template-columns: 1.35fr 1fr auto; gap: 8px; }
+  .route-actions > * { min-height: 48px; padding: 10px 12px; font-size: 14px; }
+  #route-info { max-height: 86px; overflow-y: auto; }
+  #shop-card {
+    left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto;
+    max-height: calc(100dvh - max(92px, env(safe-area-inset-top) + 76px));
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  #shop-card.hidden { display: none; }
+  .card-logo { height: 86px; }
+  .card-body { padding: 14px; overflow-y: auto; overscroll-behavior: contain; }
+  #card-desc { max-height: 84px; }
+  .icon-btn { width: 44px; height: 44px; }
+  #card-close {
+    top: 8px; right: 8px; width: 48px; height: 48px; border-radius: 50%;
+    color: #fff; background: rgba(10,18,32,.82); border: 1px solid rgba(255,255,255,.25);
+    box-shadow: 0 4px 18px rgba(0,0,0,.32);
+  }
+  #drawer { width: 100vw; padding-top: env(safe-area-inset-top); }
+  .shop-item { min-height: 64px; }
   .brand-txt strong { font-size: 13px; }
+}
+
+@media (max-width: 380px) {
+  .brand-txt { display: none; }
+  .route-actions { grid-template-columns: 1fr 1fr; }
+  #btn-clear { grid-column: 1 / -1; }
 }

@@ -49,3 +49,6 @@ js/ar.js        … ARナビ（カメラ + コンパス + Three.jsオーバー�
 vendor/         … Three.js 同梱
 assets/         … 公式フロアマップ画像（参照用）
 ```
+
+
+https://notic2025-lab.github.io/gfo-virtual-map/
