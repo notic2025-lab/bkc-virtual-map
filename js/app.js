@@ -637,7 +637,6 @@ function clearRoute() {
   routeObjects = []; routeArrows = []; routeDots = []; routeCurve = null; currentRoute = null;
   document.getElementById('route-info').classList.add('hidden');
   document.getElementById('btn-ar').disabled = true;
-  document.getElementById('btn-nav').disabled = true;
   document.getElementById('route-panel-title').textContent = '経路を検索';
 }
 
@@ -711,7 +710,6 @@ function showRoute(fromId, toId) {
   info.innerHTML = `<b>${esc(from.name)}</b> → <b>${esc(to.name)}</b><br>距離 約${lengthM}m ・ 徒歩 約${mins}分`;
   info.classList.remove('hidden');
   document.getElementById('btn-ar').disabled = false;
-  document.getElementById('btn-nav').disabled = false;
   document.getElementById('route-panel-title').textContent = `${to.name} への経路`;
 
   // 経路全体が見えるようにカメラ移動
