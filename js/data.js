@@ -16,6 +16,27 @@ export function toWorld(left, top) {
   };
 }
 
+// ---- GPSジオリファレンス（実座標 ⇔ フロアマップ座標）----
+// lat0/lng0 = マップ中心 (world 0,0) の実座標。rotationDeg = フロアマップ上方向の方位
+// （真北から時計回り）。値は地図からの推定のため、現地でズレがあればここを調整する。
+export const GEO = {
+  lat0: 34.7058,
+  lng0: 135.4954,
+  rotationDeg: 0,
+  meterPerUnit: 1.6,
+};
+
+export function gpsToWorld(lat, lng) {
+  const rad = Math.PI / 180;
+  const dN = (lat - GEO.lat0) * 111320;                          // 北方向 (m)
+  const dE = (lng - GEO.lng0) * 111320 * Math.cos(GEO.lat0 * rad); // 東方向 (m)
+  const th = GEO.rotationDeg * rad;
+  return {
+    x: (dE * Math.cos(th) - dN * Math.sin(th)) / GEO.meterPerUnit,
+    z: -(dN * Math.cos(th) + dE * Math.sin(th)) / GEO.meterPerUnit,
+  };
+}
+
 export const CATEGORIES = {
   fashion:  { label: 'ファッション',        color: 0xc5ca00, css: '#c5ca00' },
   interior: { label: 'インテリア・雑貨',    color: 0x00979d, css: '#00979d' },

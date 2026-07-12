@@ -151,11 +151,12 @@ button, select, input, a { touch-action: manipulation; }
   transition: background .15s;
 }
 .shop-item:hover { background: rgba(255,255,255,.07); }
-.shop-route-btn {
-  flex-shrink: 0; min-width: 58px; min-height: 40px; border: 1px solid rgba(56,189,248,.38);
-  border-radius: 12px; color: #dff7ff; background: rgba(56,189,248,.13);
-  font: 700 12px/1 inherit; cursor: pointer;
+.shop-info-btn {
+  flex-shrink: 0; width: 40px; height: 40px; border: 1px solid var(--line);
+  border-radius: 50%; color: var(--txt-dim); background: rgba(255,255,255,.06);
+  font: 700 16px/1 inherit; cursor: pointer;
 }
+.shop-info-btn:hover { color: var(--txt); border-color: var(--accent); }
 .search-empty { padding: 36px 18px; color: var(--txt-dim); text-align: center; line-height: 1.7; }
 .search-empty small { font-size: 11px; opacity: .75; }
 .shop-item .thumb {
@@ -273,8 +274,9 @@ button, select, input, a { touch-action: manipulation; }
 }
 #route-info.hidden { display: none; }
 
-/* ---------- 3Dナビ（ポケモンGO風追従ビュー） ---------- */
+/* ---------- GPSナビ ---------- */
 #btn-nav { grid-column: 1 / -1; min-height: 48px; }
+#route-panel.no-route { display: none; }
 #nav-hud { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
 #nav-hud.hidden { display: none; }
 #nav-banner {
@@ -287,8 +289,9 @@ button, select, input, a { touch-action: manipulation; }
 }
 #nav-dest { font-size: 14px; font-weight: 800; }
 #nav-remain { font-size: 12px; color: #7dd3fc; margin-top: 3px; font-weight: 700; }
+#nav-gps { font-size: 10.5px; color: var(--txt-dim); margin-top: 3px; }
 #nav-offroute {
-  position: absolute; top: calc(max(14px, env(safe-area-inset-top)) + 150px); left: 50%;
+  position: absolute; top: calc(max(14px, env(safe-area-inset-top)) + 158px); left: 50%;
   transform: translateX(-50%); white-space: nowrap;
   background: rgba(127,29,29,.9); border: 1px solid rgba(248,113,113,.6);
   color: #fecaca; border-radius: 999px; padding: 8px 16px;
@@ -296,29 +299,14 @@ button, select, input, a { touch-action: manipulation; }
   animation: toastIn .3s;
 }
 #nav-offroute.hidden { display: none; }
-#nav-exit {
-  position: absolute; right: 14px; top: calc(max(14px, env(safe-area-inset-top)) + 58px);
-  pointer-events: auto; background: rgba(18,26,42,.9); min-height: 44px;
-}
-#nav-joystick {
-  position: absolute; left: 50%; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 26px);
+#nav-controls {
+  position: absolute; left: 50%; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 18px);
   transform: translateX(-50%);
-  width: 132px; height: 132px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(13,22,38,.35), rgba(13,22,38,.72));
-  border: 2px solid rgba(125,211,252,.45);
-  pointer-events: auto; touch-action: none;
-  box-shadow: 0 8px 30px rgba(0,0,0,.4);
+  display: flex; gap: 10px; pointer-events: auto;
 }
-#nav-knob {
-  position: absolute; left: 50%; top: 50%;
-  width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #a5f3fc, #38bdf8 60%, #0284c7);
-  box-shadow: 0 4px 14px rgba(56,189,248,.5);
-}
-#nav-hint {
-  position: absolute; left: 50%; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 4px);
-  transform: translateX(-50%); white-space: nowrap;
-  color: #9fc7dd; font-size: 11px; text-shadow: 0 1px 4px #000;
+#nav-controls .chip-btn {
+  min-height: 50px; min-width: 84px; font-size: 14px; font-weight: 700;
+  background: rgba(18,26,42,.92); box-shadow: 0 8px 26px rgba(0,0,0,.4);
 }
 /* ナビ中は探索UIを隠してマップに集中 */
 body.nav-active #quick-destination,
@@ -446,7 +434,6 @@ body.nav-active #route-panel { display: none; }
   .route-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   .route-actions > * { min-height: 48px; padding: 10px 12px; font-size: 14px; }
   #btn-nav { grid-column: 1 / -1; min-height: 56px; font-size: 16px; }
-  #nav-hint { display: none; }
   #route-info { max-height: 86px; overflow-y: auto; }
   #shop-card {
     left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto;
@@ -465,7 +452,7 @@ body.nav-active #route-panel { display: none; }
   }
   #drawer { width: 100vw; padding-top: env(safe-area-inset-top); }
   .shop-item { min-height: 64px; }
-  .shop-route-btn { min-width: 64px; min-height: 44px; }
+  .shop-info-btn { width: 44px; height: 44px; }
   .brand-txt strong { font-size: 13px; }
 }
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>GFO 北館1F バーチャルマップ | GRAND FRONT OSAKA</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260713a">
+<link rel="stylesheet" href="css/style.css?v=20260713b">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -77,42 +77,36 @@
     </div>
   </div>
 
-  <!-- 経路パネル -->
-  <div id="route-panel">
+  <!-- 経路パネル（目的地を選ぶと表示される結果シート） -->
+  <div id="route-panel" class="no-route">
     <button id="route-panel-toggle" type="button" aria-expanded="true" aria-controls="route-panel-body">
       <span class="route-handle" aria-hidden="true"></span>
       <span id="route-panel-title">経路を検索</span>
       <span class="route-toggle-icon" aria-hidden="true">⌄</span>
     </button>
     <div id="route-panel-body">
-    <div class="route-row">
-      <span class="dot dot-start"></span>
-      <select id="route-from"></select>
-    </div>
-    <div class="route-row">
-      <span class="dot dot-goal"></span>
-      <select id="route-to"></select>
-    </div>
-    <div class="route-actions">
-      <button id="btn-nav" class="ar-btn ar-primary">🧭 案内開始（3Dナビ）</button>
-      <button id="btn-ar" class="ar-btn" disabled>📱 ARナビ</button>
-      <button id="btn-walk" class="ghost-btn">🚶 自動で歩く</button>
-      <button id="btn-clear" class="ghost-btn small">クリア</button>
-    </div>
     <div id="route-info" class="hidden"></div>
+    <div class="route-actions">
+      <button id="btn-nav" class="ar-btn ar-primary">🧭 ナビ開始</button>
+      <button id="btn-ar" class="ar-btn" disabled>📱 ARナビ</button>
+      <button id="btn-clear" class="ghost-btn small">✕</button>
+    </div>
     </div>
   </div>
 
-  <!-- 3Dナビ（ポケモンGO風追従ビュー）HUD -->
+  <!-- GPSナビ HUD -->
   <div id="nav-hud" class="hidden">
     <div id="nav-banner">
       <div id="nav-dest"></div>
       <div id="nav-remain"></div>
+      <div id="nav-gps"></div>
     </div>
-    <div id="nav-offroute" class="hidden">⚠ ルートから外れています</div>
-    <button id="nav-exit" class="chip-btn danger">✕ 終了</button>
-    <div id="nav-joystick"><div id="nav-knob"></div></div>
-    <div id="nav-hint">スティックで移動 ・ 画面ドラッグで見回し（PC: 矢印キー / WASD）</div>
+    <div id="nav-offroute" class="hidden">⚠ ルートから外れています — 引き直します</div>
+    <div id="nav-controls">
+      <button id="nav-view" class="chip-btn">🔭 俯瞰</button>
+      <button id="nav-ar" class="chip-btn">📱 AR</button>
+      <button id="nav-exit" class="chip-btn danger">✕ 終了</button>
+    </div>
   </div>
 
   <!-- トースト -->
@@ -147,6 +141,6 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260713a"></script>
+<script type="module" src="js/app.js?v=20260713b"></script>
 </body>
 </html>

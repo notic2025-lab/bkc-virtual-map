@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import {
-  MAP_W, MAP_D, toWorld, CATEGORIES, SHOPS, PLACES, DECOR, FACILITIES,
+  MAP_W, MAP_D, toWorld, gpsToWorld, CATEGORIES, SHOPS, PLACES, DECOR, FACILITIES,
   NAV_NODES, NAV_EDGES, ENTRY_NODE,
 } from './data.js';
 import { startAR } from './ar.js';
@@ -608,13 +608,23 @@ function getPoi(id) {
   return SHOPS.find(s => s.id === id) || PLACES.find(p => p.id === id);
 }
 
-// POI → 経路のワールド座標列
-function buildRoutePoints(fromId, toId) {
-  const from = getPoi(fromId), to = getPoi(toId);
-  if (!from || !to) return null;
-  const nodePath = astar(ENTRY_NODE[fromId], ENTRY_NODE[toId]);
+// 最寄りの通路ノード（任意のワールド座標＝GPS現在地から経路探索するため）
+function nearestNode(pos) {
+  let best = null, bd = Infinity;
+  for (const [id, p] of Object.entries(nodePos)) {
+    const d = (p.x - pos.x) ** 2 + (p.z - pos.z) ** 2;
+    if (d < bd) { bd = d; best = id; }
+  }
+  return best;
+}
+
+// 現在地（ワールド座標）→ 目的地POI の経路座標列
+function buildRoutePoints(startPos, toId) {
+  const to = getPoi(toId);
+  if (!to) return null;
+  const nodePath = astar(nearestNode(startPos), ENTRY_NODE[toId]);
   if (!nodePath) return null;
-  const pts = [from._pos.clone()];
+  const pts = [startPos.clone().setY(0)];
   for (const n of nodePath) pts.push(nodePos[n].clone());
   pts.push(to._pos.clone());
   // 連続する近接点を除去
@@ -638,11 +648,12 @@ function clearRoute() {
   document.getElementById('route-info').classList.add('hidden');
   document.getElementById('btn-ar').disabled = true;
   document.getElementById('route-panel-title').textContent = '経路を検索';
+  document.getElementById('route-panel').classList.add('no-route');
 }
 
-function showRoute(fromId, toId) {
+function showRoute(toId, { fly = true } = {}) {
   clearRoute();
-  const points = buildRoutePoints(fromId, toId);
+  const points = buildRoutePoints(avatar.position, toId);
   if (!points || points.length < 2) { toast('経路が見つかりませんでした'); return false; }
 
   const lifted = points.map(p => p.clone().setY(0.62));
@@ -682,7 +693,7 @@ function showRoute(fromId, toId) {
     routeObjects.push(cone); routeArrows.push(cone);
   }
 
-  // スタート/ゴールのビーコン
+  // ゴールのビーコン（スタート＝現在地はアバター自身が示すため不要）
   const mkBeacon = (pos, color) => {
     const g = new THREE.Group();
     const pillar = new THREE.Mesh(
@@ -698,24 +709,26 @@ function showRoute(fromId, toId) {
     scene.add(g); routeObjects.push(g);
     return g;
   };
-  mkBeacon(points[0], 0x34d399);
   mkBeacon(points[points.length - 1], 0xf472b6);
 
   const lengthM = Math.round(len * METER_PER_UNIT);
-  currentRoute = { fromId, toId, points, lengthM };
+  currentRoute = { toId, points, lengthM };
 
-  const from = getPoi(fromId), to = getPoi(toId);
+  const to = getPoi(toId);
   const info = document.getElementById('route-info');
   const mins = Math.max(1, Math.round(lengthM / 67)); // 徒歩 約4km/h
-  info.innerHTML = `<b>${esc(from.name)}</b> → <b>${esc(to.name)}</b><br>距離 約${lengthM}m ・ 徒歩 約${mins}分`;
+  info.innerHTML = `<b>現在地</b> → <b>${esc(to.name)}</b><br>距離 約${lengthM}m ・ 徒歩 約${mins}分`;
   info.classList.remove('hidden');
   document.getElementById('btn-ar').disabled = false;
   document.getElementById('route-panel-title').textContent = `${to.name} への経路`;
+  document.getElementById('route-panel').classList.remove('no-route');
 
-  // 経路全体が見えるようにカメラ移動
-  const box = new THREE.Box3().setFromPoints(points);
-  const center = box.getCenter(new THREE.Vector3());
-  flyTo(center.clone().add(new THREE.Vector3(0, 60, 46)), center);
+  if (fly && !navMode) {
+    // 経路全体が見えるようにカメラ移動
+    const box = new THREE.Box3().setFromPoints(points);
+    const center = box.getCenter(new THREE.Vector3());
+    flyTo(center.clone().add(new THREE.Vector3(0, 60, 46)), center);
+  }
   return true;
 }
 
@@ -729,27 +742,6 @@ function flyTo(camPos, target, dur = 1.4) {
     fromPos: camera.position.clone(), toPos: camPos,
     fromTgt: controls.target.clone(), toTgt: target,
   };
-}
-
-let walking = null; // { t, dur }
-function startWalk() {
-  if (!routeCurve) { toast('先に経路を表示してください 🧭'); return; }
-  const dur = Math.max(6, routeCurve.getLength() / 7);
-  walking = { t: 0, dur };
-  controls.enabled = false;
-  setRoutePanelCollapsed(true); // パネルを畳んでマップ全体を見せる
-  toast('お散歩モード：経路を歩いています… 🚶');
-}
-function stopWalk() {
-  if (!walking) return;
-  walking = null;
-  controls.enabled = true;
-  setRoutePanelCollapsed(false); // 到着したらパネルを再表示
-  avatarPlaceId = currentRoute?.toId ?? avatarPlaceId;
-  syncFromSelect();
-  const target = avatar.position.clone();
-  flyTo(target.clone().add(new THREE.Vector3(0, 55, 42)), target);
-  toast('目的地に到着しました！ 🎉');
 }
 
 // ------------------------------------------------------------
@@ -766,34 +758,6 @@ function toast(msg, ms = 2600) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add('hidden'), ms);
 }
-
-// 経路セレクト
-function fillSelects() {
-  const opts = [];
-  opts.push({ group: '現在地', items: [{ id: '__here__', name: '📍 現在地（アバター）' }] });
-  opts.push({ group: 'エントランス・施設', items: PLACES.map(p => ({ id: p.id, name: p.name })) });
-  opts.push({ group: 'ショップ', items: SHOPS.map(s => ({ id: s.id, name: s.name })) });
-  for (const selId of ['route-from', 'route-to']) {
-    const sel = $(selId);
-    sel.innerHTML = '';
-    for (const g of opts) {
-      if (selId === 'route-to' && g.group === '現在地') continue;
-      const og = document.createElement('optgroup');
-      og.label = g.group;
-      for (const it of g.items) {
-        const o = document.createElement('option');
-        o.value = it.id; o.textContent = it.name;
-        og.appendChild(o);
-      }
-      sel.appendChild(og);
-    }
-  }
-  $('route-from').value = '__here__';
-  $('route-to').value = 'soholm';
-}
-function resolveFrom(v) { return v === '__here__' ? avatarPlaceId : v; }
-function syncFromSelect() { /* 現在地表示は __here__ のまま */ }
-fillSelects();
 
 const routePanel = $('route-panel');
 const routePanelToggle = $('route-panel-toggle');
@@ -819,18 +783,7 @@ $('btn-north').addEventListener('click', () => {
   toast('北を上に戻しました');
 });
 
-function updateRouteFromSelections() {
-  const from = resolveFrom($('route-from').value);
-  const to = $('route-to').value;
-  if (from === to) { toast('出発地と目的地が同じです'); return; }
-  if (showRoute(from, to)) {
-    setRoutePanelCollapsed(false);
-  }
-}
-$('route-from').addEventListener('change', updateRouteFromSelections);
-$('route-to').addEventListener('change', updateRouteFromSelections);
-$('btn-clear').addEventListener('click', () => { exitNav(false); clearRoute(); stopWalk(); setRoutePanelCollapsed(false); });
-$('btn-walk').addEventListener('click', () => walking ? stopWalk() : startWalk());
+$('btn-clear').addEventListener('click', () => { exitNav(false); clearRoute(); });
 $('btn-ar').addEventListener('click', () => {
   if (!currentRoute) return;
   startAR(currentRoute, getPoi, METER_PER_UNIT);
@@ -910,14 +863,15 @@ function renderShopList(filter = '', cat = 'all') {
     div.innerHTML = `
       <img class="thumb" src="${s.logo}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
       <div class="meta"><b>${esc(s.name)}</b><span>${esc(s.tag)}</span></div>
-      <button class="shop-route-btn" type="button">経路案内</button>`;
+      <button class="shop-info-btn" type="button" title="店舗情報">ⓘ</button>`;
+    // 行タップ1回で経路案内まで直行（店舗情報はⓘから）
     div.addEventListener('click', (event) => {
-      if (event.target.closest('.shop-route-btn')) return;
-      openCard(s); focusShop(s); $('drawer').classList.remove('open');
-    });
-    div.querySelector('.shop-route-btn').addEventListener('click', (event) => {
-      event.stopPropagation();
+      if (event.target.closest('.shop-info-btn')) return;
       startGuidanceTo(s);
+    });
+    div.querySelector('.shop-info-btn').addEventListener('click', (event) => {
+      event.stopPropagation();
+      openCard(s); focusShop(s); $('drawer').classList.remove('open');
     });
     list.appendChild(div);
   }
@@ -978,14 +932,11 @@ $('card-close').addEventListener('click', (event) => {
 addEventListener('keydown', (event) => { if (event.key === 'Escape') closeCard(); });
 
 function startGuidanceTo(shop) {
-  const from = resolveFrom($('route-from').value);
-  if (from === shop.id) { toast('すでに目的地にいます'); return; }
-  $('route-to').value = shop.id;
-  if (!showRoute(from, shop.id)) return;
+  if (!showRoute(shop.id)) return;
   closeCard();
   $('drawer').classList.remove('open');
   setRoutePanelCollapsed(false);
-  toast(`${shop.name} への経路を表示しました。「案内開始」で歩いてみましょう 🧭`);
+  toast(`${shop.name} への最短経路です。「ナビ開始」で現在地に追従します 🧭`);
 }
 
 $('card-goto').addEventListener('click', () => {
@@ -999,55 +950,49 @@ function focusShop(shop) {
 }
 
 // ------------------------------------------------------------
-// 3Dナビモード（ポケモンGO風：背後からの追従視点で自分で歩き、
-// 自分の位置がマップ上を動くことで道が合っているかを確かめられる）
+// GPS現在地（実際の位置情報でアバターとナビが動く）
 // ------------------------------------------------------------
-const NAV_SPEED = 5.2;        // 移動速度（ワールド単位/秒・体感優先）
-const NAV_OFFROUTE_DIST = 5;  // ルート逸脱とみなす距離（≈8m）
-const NAV_ARRIVE_DIST = 3.2;  // 到着とみなす距離
-let navMode = null; // { heading, headingOffset, zoom, samples, goal, len }
+const geoState = { watchId: null, ok: false, world: null, course: null };
 
-// バーチャルジョイスティック（ポケモンGOのGPS移動の代わり）
-const navJoy = { active: false, x: 0, y: 0 };
-{
-  const stick = $('nav-joystick'), knob = $('nav-knob');
-  const R = 46;
-  let pid = null;
-  const setKnob = (x, y) => { knob.style.transform = `translate(${x * R}px, ${y * R}px)`; };
-  const move = (e) => {
-    const r = stick.getBoundingClientRect();
-    let dx = (e.clientX - (r.left + r.width / 2)) / R;
-    let dy = (e.clientY - (r.top + r.height / 2)) / R;
-    const m = Math.hypot(dx, dy);
-    if (m > 1) { dx /= m; dy /= m; }
-    navJoy.x = dx; navJoy.y = dy;
-    setKnob(dx, dy);
-  };
-  stick.addEventListener('pointerdown', (e) => {
-    pid = e.pointerId;
-    stick.setPointerCapture(pid);
-    navJoy.active = true;
-    move(e);
-  });
-  stick.addEventListener('pointermove', (e) => { if (e.pointerId === pid) move(e); });
-  const end = (e) => {
-    if (e.pointerId !== pid) return;
-    pid = null; navJoy.active = false; navJoy.x = navJoy.y = 0;
-    setKnob(0, 0);
-  };
-  stick.addEventListener('pointerup', end);
-  stick.addEventListener('pointercancel', end);
+function geoStatusText() {
+  if (!('geolocation' in navigator)) return 'GPS非対応';
+  if (geoState.watchId == null) return 'GPS待機中';
+  if (!geoState.world) return 'GPS取得中…';
+  return geoState.ok ? 'GPS追従中' : 'エリア外';
 }
+function updateGeoChip() {
+  $('nav-gps').textContent = `📡 ${geoStatusText()}`;
+}
+function startGeolocation() {
+  if (geoState.watchId != null || !('geolocation' in navigator)) return;
+  geoState.watchId = navigator.geolocation.watchPosition((pos) => {
+    const { latitude, longitude, heading } = pos.coords;
+    const { x, z } = gpsToWorld(latitude, longitude);
+    // マップ範囲＋余白の内側にいるときだけ実位置へ追従する（それ以外は入口基準）
+    geoState.ok = Math.abs(x) < MAP_W / 2 + 15 && Math.abs(z) < MAP_D / 2 + 15;
+    geoState.world = new THREE.Vector3(
+      THREE.MathUtils.clamp(x, -MAP_W / 2 + 1.5, MAP_W / 2 - 1.5), 0,
+      THREE.MathUtils.clamp(z, -MAP_D / 2 + 1.5, MAP_D / 2 - 1.5));
+    geoState.course = (typeof heading === 'number' && !Number.isNaN(heading))
+      ? THREE.MathUtils.degToRad(heading) : null;
+    updateGeoChip();
+  }, () => {
+    toast('位置情報を取得できませんでした。ブラウザ設定で位置情報を許可してください');
+    updateGeoChip();
+  }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 });
+  updateGeoChip();
+}
+// 起動直後の許可ダイアログを避け、最初の画面タップで位置情報の利用を開始
+addEventListener('pointerdown', () => startGeolocation(), { once: true });
 
-// PC用: 矢印キー / WASD
-const navKeys = new Set();
-addEventListener('keydown', (e) => {
-  const k = e.key.toLowerCase();
-  navKeys.add(k);
-  if (navMode && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
-  if (k === 'escape') exitNav(false);
-});
-addEventListener('keyup', (e) => navKeys.delete(e.key.toLowerCase()));
+// ------------------------------------------------------------
+// ナビモード（GPS追従。追従(三人称)/俯瞰をワンタップ切替、逸脱時は自動リルート）
+// ------------------------------------------------------------
+const NAV_OFFROUTE_DIST = 6;  // 経路逸脱とみなす距離（≈10m: 屋内GPS誤差を考慮）
+const NAV_ARRIVE_DIST = 5;    // 到着とみなす距離（≈8m）
+let navMode = null; // { view, heading, headingOffset, zoom, samples, goal, len, rerouteAt }
+
+addEventListener('keydown', (e) => { if (e.key === 'Escape') exitNav(false); });
 
 // ナビ中の見回し（1本指ドラッグ=回転 / ピンチ=ズーム / ホイール=ズーム）
 const navPointers = new Map();
@@ -1076,107 +1021,130 @@ canvas.addEventListener('wheel', (e) => {
   navMode.zoom = THREE.MathUtils.clamp(navMode.zoom * (1 + e.deltaY * 0.0012), 6.5, 20);
 }, { passive: false });
 
+function refreshNavRoute() {
+  navMode.samples = routeCurve.getSpacedPoints(160);
+  navMode.goal = routeCurve.getPointAt(1);
+  navMode.len = routeCurve.getLength();
+}
+
 function startNav() {
-  if (!routeCurve || !currentRoute) { toast('先に目的地を選んで経路を表示してください 🧭'); return; }
-  walking = null;
+  if (!routeCurve || !currentRoute) { toast('先に目的地を選んでください 🧭'); return; }
+  startGeolocation();
   camTween = null;
   controls.enabled = false;
-  const p0 = routeCurve.getPointAt(0);
-  const t0 = routeCurve.getTangentAt(0);
-  avatar.position.copy(p0).setY(0);
   avatar.userData.hereLabel.visible = false; // 追従視点では自分の目印は不要
+  const t0 = routeCurve.getTangentAt(0);
   navMode = {
+    view: 'follow',
     heading: Math.atan2(t0.x, t0.z),
     headingOffset: 0,
     zoom: 14,
-    samples: routeCurve.getSpacedPoints(160),
-    goal: routeCurve.getPointAt(1),
-    len: routeCurve.getLength(),
+    rerouteAt: 0,
   };
+  refreshNavRoute();
   document.body.classList.add('nav-active');
   $('nav-hud').classList.remove('hidden');
   $('nav-offroute').classList.add('hidden');
   $('nav-dest').textContent = `${getPoi(currentRoute.toId).name} へ案内中`;
+  $('nav-view').textContent = '🔭 俯瞰';
+  updateGeoChip();
   setRoutePanelCollapsed(true);
   closeCard();
   $('drawer').classList.remove('open');
-  toast('案内開始！光る道に沿って歩いてみましょう 🚶', 3600);
 }
 
 function exitNav(arrived = false) {
   if (!navMode) return;
   navMode = null;
   navPointers.clear();
-  navJoy.active = false; navJoy.x = navJoy.y = 0;
-  $('nav-knob').style.transform = 'translate(0px, 0px)';
   document.body.classList.remove('nav-active');
   $('nav-hud').classList.add('hidden');
   avatar.userData.hereLabel.visible = true;
   controls.enabled = true;
-  if (arrived) {
-    avatarPlaceId = currentRoute?.toId ?? avatarPlaceId;
-    syncFromSelect();
-    toast('目的地に到着しました！ 🎉');
-  }
   const target = avatar.position.clone().setY(0);
   flyTo(target.clone().add(new THREE.Vector3(0, 55, 42)), target, 1.1);
-  setRoutePanelCollapsed(false);
+  if (arrived) {
+    avatarPlaceId = currentRoute?.toId ?? avatarPlaceId;
+    clearRoute();
+    toast('目的地に到着しました！ 🎉');
+  } else {
+    setRoutePanelCollapsed(false);
+  }
+}
+
+function turnTo(target, k) {
+  let dh = target - navMode.heading;
+  dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+  navMode.heading += dh * Math.min(1, k);
 }
 
 function updateNav(dt, t) {
-  // 入力（ジョイスティック優先、無ければキーボード）
-  let jx = navJoy.x, jy = navJoy.y;
-  if (!navJoy.active) {
-    jx = (navKeys.has('arrowright') || navKeys.has('d') ? 1 : 0) - (navKeys.has('arrowleft') || navKeys.has('a') ? 1 : 0);
-    jy = (navKeys.has('arrowdown') || navKeys.has('s') ? 1 : 0) - (navKeys.has('arrowup') || navKeys.has('w') ? 1 : 0);
+  // GPS現在地へ追従（取得できない間は経路の始点で待機）
+  let moving = false;
+  if (geoState.ok && geoState.world) {
+    const dist = Math.hypot(geoState.world.x - avatar.position.x, geoState.world.z - avatar.position.z);
+    moving = dist > 0.6;
+    const k = 1 - Math.pow(0.02, dt);
+    const dx = (geoState.world.x - avatar.position.x) * k;
+    const dz = (geoState.world.z - avatar.position.z) * k;
+    avatar.position.x += dx;
+    avatar.position.z += dz;
+    // 向き: GPSの進行方位 > 実際の移動ベクトル の優先順
+    if (geoState.course != null) turnTo(geoState.course, dt * 4);
+    else if (moving && Math.hypot(dx, dz) > 0.01) turnTo(Math.atan2(dx, dz), dt * 4);
   }
-  const mag = Math.min(1, Math.hypot(jx, jy));
-  const moving = mag > 0.12;
+  avatar.position.y = moving ? Math.abs(Math.sin(t * 10)) * 0.2 : 0;
 
-  if (moving) {
-    // 画面上方向＝カメラ前方として移動ベクトルを作る
-    const yaw = navMode.heading + navMode.headingOffset;
-    const f = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-    const r = new THREE.Vector3(-f.z, 0, f.x);
-    const dir = f.multiplyScalar(-jy).add(r.multiplyScalar(jx)).normalize();
-    avatar.position.addScaledVector(dir, NAV_SPEED * mag * dt);
-    avatar.position.x = THREE.MathUtils.clamp(avatar.position.x, -MAP_W / 2 + 2, MAP_W / 2 - 2);
-    avatar.position.z = THREE.MathUtils.clamp(avatar.position.z, -MAP_D / 2 + 2, MAP_D / 2 - 2);
-    // 進行方向へ滑らかに旋回し、手動の見回しは背後へ戻していく
-    let dh = Math.atan2(dir.x, dir.z) - navMode.heading;
-    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
-    navMode.heading += dh * Math.min(1, dt * 6);
-    if (!navPointers.size) navMode.headingOffset *= Math.pow(0.12, dt);
-    avatar.position.y = Math.abs(Math.sin(t * 10)) * 0.22; // 歩く弾み
-  } else {
-    avatar.position.y = 0;
-  }
-  avatar.rotation.y = navMode.heading;
-
-  // 追従カメラ（アバターを画面下寄りに置く三人称視点）
-  const yaw = navMode.heading + navMode.headingOffset;
-  const camF = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-  const camPos = avatar.position.clone().addScaledVector(camF, -navMode.zoom * 0.8)
-    .add(new THREE.Vector3(0, navMode.zoom * 0.78, 0));
-  const camTgt = avatar.position.clone().addScaledVector(camF, navMode.zoom * 0.42).setY(1.2);
-  const k = 1 - Math.pow(0.001, dt);
-  camera.position.lerp(camPos, k);
-  controls.target.lerp(camTgt, k);
-  camera.lookAt(controls.target);
-
-  // ルート進捗・逸脱チェック
+  // ルート進捗（最寄りサンプル点）
   const s = navMode.samples;
   let bi = 0, bd = Infinity;
   for (let i = 0; i < s.length; i++) {
-    const dx = s[i].x - avatar.position.x, dz = s[i].z - avatar.position.z;
-    const d = dx * dx + dz * dz;
+    const ddx = s[i].x - avatar.position.x, ddz = s[i].z - avatar.position.z;
+    const d = ddx * ddx + ddz * ddz;
     if (d < bd) { bd = d; bi = i; }
   }
+
+  // 立ち止まっているときは経路の進む向きへ自然に向き直る
+  if (!moving && geoState.course == null) {
+    const ni = Math.min(s.length - 1, bi + 3);
+    const dir = s[ni].clone().sub(s[bi]);
+    if (dir.lengthSq() > 0.01) turnTo(Math.atan2(dir.x, dir.z), dt * 2);
+  }
+  avatar.rotation.y = navMode.heading;
+
+  // カメラ（追従=三人称 / 俯瞰=真上から北上）
+  const k = 1 - Math.pow(0.001, dt);
+  if (navMode.view === 'follow') {
+    const yaw = navMode.heading + navMode.headingOffset;
+    const camF = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    camera.position.lerp(
+      avatar.position.clone().addScaledVector(camF, -navMode.zoom * 0.8)
+        .add(new THREE.Vector3(0, navMode.zoom * 0.78, 0)), k);
+    controls.target.lerp(
+      avatar.position.clone().addScaledVector(camF, navMode.zoom * 0.42).setY(1.2), k);
+  } else {
+    camera.position.lerp(avatar.position.clone().add(new THREE.Vector3(0, navMode.zoom * 4, navMode.zoom * 1.2)), k);
+    controls.target.lerp(avatar.position.clone().setY(0), k);
+  }
+  camera.lookAt(controls.target);
+
+  // 残距離表示
   const remainM = Math.max(0, Math.round((1 - bi / (s.length - 1)) * navMode.len * METER_PER_UNIT));
   const remainText = `目的地まで 約${remainM}m`;
   const remainEl = $('nav-remain');
   if (remainEl.textContent !== remainText) remainEl.textContent = remainText;
-  $('nav-offroute').classList.toggle('hidden', Math.sqrt(bd) < NAV_OFFROUTE_DIST);
+
+  // 経路逸脱 → 現在地から最短経路を自動で引き直す
+  const off = geoState.ok && Math.sqrt(bd) > NAV_OFFROUTE_DIST;
+  $('nav-offroute').classList.toggle('hidden', !off);
+  if (off && t - navMode.rerouteAt > 4) {
+    navMode.rerouteAt = t;
+    const toId = currentRoute.toId;
+    if (showRoute(toId, { fly: false })) {
+      refreshNavRoute();
+      toast('現在地からルートを引き直しました 🔄');
+    }
+  }
 
   // 到着判定
   const g = navMode.goal;
@@ -1185,6 +1153,14 @@ function updateNav(dt, t) {
 
 $('btn-nav').addEventListener('click', () => navMode ? exitNav(false) : startNav());
 $('nav-exit').addEventListener('click', () => exitNav(false));
+$('nav-view').addEventListener('click', () => {
+  if (!navMode) return;
+  navMode.view = navMode.view === 'follow' ? 'top' : 'follow';
+  $('nav-view').textContent = navMode.view === 'follow' ? '🔭 俯瞰' : '🚶 追従';
+});
+$('nav-ar').addEventListener('click', () => {
+  if (currentRoute) startAR(currentRoute, getPoi, METER_PER_UNIT);
+});
 
 // ------------------------------------------------------------
 // ピッキング（クリック/タップでお店を選択）
@@ -1308,30 +1284,18 @@ function animate() {
     }
   }
 
-  // アバター
+  // アバター（GPSが取れていれば俯瞰中も現在地に追従して動く）
   avatar.userData.ring.rotation.z = t * 1.5;
   if (navMode && routeCurve) {
     updateNav(dt, t);
-  } else if (walking && routeCurve) {
-    walking.t += dt;
-    const u = Math.min(1, walking.t / walking.dur);
-    const p = routeCurve.getPointAt(u);
-    const tan = routeCurve.getTangentAt(Math.min(0.999, u));
-    avatar.position.copy(p).setY(0);
-    avatar.lookAt(p.clone().add(tan).setY(0));
-    avatar.position.y = Math.abs(Math.sin(walking.t * 9)) * 0.25; // 歩く弾み
-    // 追従カメラ
-    const camPos = p.clone().sub(tan.clone().multiplyScalar(11)).add(new THREE.Vector3(0, 7.5, 0));
-    camera.position.lerp(camPos, 1 - Math.pow(0.001, dt));
-    controls.target.lerp(p.clone().add(tan.clone().multiplyScalar(6)).setY(2), 1 - Math.pow(0.001, dt));
-    camera.lookAt(controls.target);
-    if (u >= 1) stopWalk();
-  } else if (Math.sin(t * 2) > 0.99) {
-    avatar.position.y = 0;
+  } else if (geoState.ok && geoState.world) {
+    const k = Math.min(1, dt * 3);
+    avatar.position.x += (geoState.world.x - avatar.position.x) * k;
+    avatar.position.z += (geoState.world.z - avatar.position.z) * k;
   }
 
   // カメラトゥイーン
-  if (camTween && !walking && !navMode) {
+  if (camTween && !navMode) {
     camTween.t += dt;
     const k = Math.min(1, camTween.t / camTween.dur);
     const e = 1 - Math.pow(1 - k, 3);
