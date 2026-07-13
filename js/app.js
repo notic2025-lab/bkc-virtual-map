@@ -708,6 +708,30 @@ let currentRoute = null; // { toId, legs, curves, lengthM }
 function setActiveLeg(i) {
   activeLegIndex = i;
   routeCurve = currentRoute?.curves[i] ?? null;
+  updateRouteVisibility();
+  updateStepsUI();
+}
+
+// 経路は「今進んでいるレッグ」だけ表示（次の乗換ビームも予告として見せる）
+function updateRouteVisibility() {
+  for (const o of routeObjects) {
+    if (o.userData.legIndex != null) o.visible = o.userData.legIndex === activeLegIndex;
+    else if (o.userData.beamIndex != null) o.visible = o.userData.beamIndex === activeLegIndex + 1;
+  }
+}
+
+// ステップリスト（経路パネル）とナビバナーの現ステップ表示を更新
+function updateStepsUI() {
+  document.querySelectorAll('#route-info .route-step').forEach(li => {
+    li.classList.toggle('active', Number(li.dataset.leg) === activeLegIndex);
+  });
+  const stepEl = document.getElementById('nav-step');
+  if (currentRoute) {
+    const target = currentRoute.legs[activeLegIndex]?.target ?? '';
+    stepEl.textContent = target ? `${target}へ` : '';
+  } else {
+    stepEl.textContent = '';
+  }
 }
 
 function clearRoute() {
@@ -719,6 +743,8 @@ function clearRoute() {
   document.getElementById('route-panel-title').textContent = '経路を検索';
   document.getElementById('route-panel').classList.add('no-route');
   document.body.classList.remove('route-active');
+  document.getElementById('transfer-card').classList.add('hidden');
+  document.getElementById('nav-step').textContent = '';
 }
 
 function showRoute(toId, { fly = true } = {}) {
@@ -728,7 +754,8 @@ function showRoute(toId, { fly = true } = {}) {
 
   const curves = [];
   let totalLen = 0;
-  for (const leg of legs) {
+  for (let li = 0; li < legs.length; li++) {
+    const leg = legs[li];
     const lifted = leg.points.map(p => p.clone().setY(FLOORS[leg.floor].y + 0.62));
     const curve = new THREE.CatmullRomCurve3(lifted, false, 'centripetal', 0.15);
     curves.push(curve);
@@ -741,6 +768,7 @@ function showRoute(toId, { fly = true } = {}) {
       new THREE.MeshBasicMaterial({ color: 0x07506c, transparent: true, opacity: 0.38, depthTest: false })
     );
     outline.renderOrder = 18;
+    outline.userData.legIndex = li;
     scene.add(outline); routeObjects.push(outline);
 
     // 発光する点を流し、経路と進行方向を同時に伝える
@@ -753,6 +781,7 @@ function showRoute(toId, { fly = true } = {}) {
       dot.userData.offset = i / dotCount;
       dot.userData.curve = curve;
       dot.userData.baseY = FLOORS[leg.floor].y;
+      dot.userData.legIndex = li;
       dot.renderOrder = 19;
       scene.add(dot); routeObjects.push(dot); routeDots.push(dot);
     }
@@ -767,13 +796,14 @@ function showRoute(toId, { fly = true } = {}) {
       cone.userData.offset = i / n;
       cone.userData.curve = curve;
       cone.userData.baseY = FLOORS[leg.floor].y;
+      cone.userData.legIndex = li;
       cone.renderOrder = 20;
       scene.add(cone);
       routeObjects.push(cone); routeArrows.push(cone);
     }
   }
 
-  // フロア間の乗換ビーム（エレベーター/エスカレーターの縦動線を可視化）
+  // フロア間の乗換ビーム＋「B1へ ↓」マーカー（次の乗換だけ表示される）
   for (let i = 1; i < legs.length; i++) {
     const from = legs[i - 1], toLeg = legs[i];
     const p = toLeg.points[0];
@@ -784,12 +814,20 @@ function showRoute(toId, { fly = true } = {}) {
     );
     beam.position.set(p.x, (y1 + y2) / 2, p.z);
     beam.renderOrder = 17;
+    beam.userData.beamIndex = i;
     scene.add(beam); routeObjects.push(beam);
     for (const yy of [y1, y2]) {
       const ring = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.13, 10, 36), new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false }));
       ring.rotation.x = Math.PI / 2; ring.position.set(p.x, yy + 0.3, p.z); ring.renderOrder = 17;
+      ring.userData.beamIndex = i;
       scene.add(ring); routeObjects.push(ring);
     }
+    // 乗換マーカー（今のフロア側のエレベーター上に「B1へ ↓」）
+    const dirArrow = y2 > y1 ? '↑' : '↓';
+    const marker = makeLabelSprite(`${FLOORS[toLeg.floor].short}へ ${dirArrow}`, { bg: '#7c2d12', fg: '#ffedd5', border: '#f59e0b', scale: 1.05 });
+    marker.position.set(p.x, y1 + 6.5, p.z);
+    marker.userData = { legIndex: i - 1 };
+    scene.add(marker); routeObjects.push(marker);
   }
 
   // ゴールのビーコン（スタート＝現在地はアバター自身が示すため不要）
@@ -806,21 +844,40 @@ function showRoute(toId, { fly = true } = {}) {
     ring.rotation.x = Math.PI / 2; ring.position.y = 0.2;
     g.add(pillar, ring);
     g.position.copy(goalPos);
+    g.userData.legIndex = legs.length - 1;
     scene.add(g); routeObjects.push(g);
   }
 
+  const to = getPoi(toId);
   const transfers = legs.slice(1).map(l => l.via);
   const lengthM = Math.round(totalLen * METER_PER_UNIT) + transfers.length * 15; // 乗換1回 ≈ +15m
-  currentRoute = { toId, legs, curves, lengthM };
-  setActiveLeg(0);
 
-  const to = getPoi(toId);
+  // 各レッグの「向かう先」（ステップ表示とナビバナーで使う）
+  legs.forEach((leg, i) => {
+    leg.target = i < legs.length - 1 ? legs[i + 1].via : to.name;
+  });
+
+  currentRoute = { toId, legs, curves, lengthM };
+
   const info = document.getElementById('route-info');
   const mins = Math.max(1, Math.round(lengthM / 67)); // 徒歩 約4km/h
-  const transferHtml = transfers.length
-    ? `<br><span class="route-transfer">↕ ${esc(transfers.join(' → '))} で ${esc(FLOORS[to.floor].short)} へ</span>`
-    : '';
-  info.innerHTML = `<b>現在地（${esc(FLOORS[userFloor].short)}）</b> → <b>${esc(to.name)}（${esc(FLOORS[to.floor].short)}）</b><br>距離 約${lengthM}m ・ 徒歩 約${mins}分${transferHtml}`;
+  const floorNote = to.floor === userFloor ? '' : `（${esc(FLOORS[to.floor].short)}・${esc(floorRelText(to.floor))}）`;
+  let html = `<b>現在地</b> → <b>${esc(to.name)}</b>${floorNote}<br>距離 約${lengthM}m ・ 徒歩 約${mins}分`;
+  if (legs.length > 1) {
+    // 手順を明示（① 歩く → ② 階を移動 → ③ 歩く）
+    const items = [];
+    legs.forEach((leg, i) => {
+      const legM = Math.round(curves[i].getLength() * METER_PER_UNIT);
+      items.push(`<li class="route-step" data-leg="${i}">${esc(FLOORS[leg.floor].short)}：${esc(leg.target)}へ 約${legM}m</li>`);
+      if (i < legs.length - 1) {
+        const up = FLOOR_ORDER.indexOf(legs[i + 1].floor) > FLOOR_ORDER.indexOf(leg.floor);
+        items.push(`<li class="route-step route-step-transfer" data-leg="${i}">${esc(legs[i + 1].via)}で ${esc(FLOORS[legs[i + 1].floor].short)} へ${up ? '上る' : '下りる'}</li>`);
+      }
+    });
+    html += `<ol class="route-steps">${items.join('')}</ol>`;
+  }
+  info.innerHTML = html;
+  setActiveLeg(0);
   info.classList.remove('hidden');
   document.getElementById('btn-ar').disabled = false;
   document.getElementById('route-panel-title').textContent = `${to.name} への経路`;
@@ -874,15 +931,37 @@ function toast(msg, ms = 2600) {
 function setViewFloor(fid, { alsoUser = false } = {}) {
   viewFloor = fid;
   if (alsoUser) userFloor = fid;
+  // 表示は常に1フロアのみ（積層は乗換演出 flashFloorGhost でのみ使用）
   for (const f of FLOOR_ORDER) {
     const active = f === fid;
-    floorVisuals[f].ground.material.opacity = active ? 1 : GHOST_GROUND_OPACITY;
-    floorVisuals[f].frame.material.opacity = active ? 0.72 : 0.1;
+    const v = floorVisuals[f];
+    v.ground.visible = active;
+    v.ground.material.opacity = 1;
+    v.frame.visible = active;
   }
   avatar.visible = userFloor === viewFloor;
   if (alsoUser && !navMode) avatar.position.y = floorY();
   document.querySelectorAll('#floor-switcher .floor-chip')
     .forEach(b => b.classList.toggle('active', b.dataset.floor === fid));
+}
+
+// 乗換の瞬間だけ、元いたフロアをうっすら見せて上下移動を演出する
+function flashFloorGhost(fid, ms = 1800) {
+  const v = floorVisuals[fid];
+  if (!v || fid === viewFloor) return;
+  v.ground.visible = true;
+  v.ground.material.opacity = GHOST_GROUND_OPACITY;
+  setTimeout(() => {
+    if (fid !== viewFloor) v.ground.visible = false;
+    v.ground.material.opacity = 1;
+  }, ms);
+}
+
+// 「1つ下の階」のような相対フロア表現（利用者にはB1/2Fより伝わりやすい）
+function floorRelText(fid, base = userFloor) {
+  const d = FLOOR_ORDER.indexOf(fid) - FLOOR_ORDER.indexOf(base);
+  if (!d) return 'このフロア';
+  return `${Math.abs(d)}つ${d > 0 ? '上' : '下'}の階`;
 }
 
 document.querySelectorAll('#floor-switcher .floor-chip').forEach(btn => {
@@ -1017,7 +1096,7 @@ function renderShopList(filter = '', cat = 'all') {
     div.className = 'shop-item';
     div.innerHTML = `
       <img class="thumb" src="${s.logo}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
-      <div class="meta"><b>${esc(s.name)}</b><span><i class="floor-badge">${esc(FLOORS[s.floor].short)}</i>${esc(s.tag)}</span></div>
+      <div class="meta"><b>${esc(s.name)}</b><span><i class="floor-badge">${esc(FLOORS[s.floor].short)}${s.floor === userFloor ? '' : '・' + esc(floorRelText(s.floor))}</i>${esc(s.tag)}</span></div>
       <button class="shop-info-btn" type="button" title="店舗情報">ⓘ</button>`;
     // 行タップ1回で経路案内まで直行（店舗情報はⓘから）
     div.addEventListener('click', (event) => {
@@ -1219,6 +1298,7 @@ function exitNav(arrived = false) {
   if (!navMode) return;
   navMode = null;
   navPointers.clear();
+  $('transfer-card').classList.add('hidden');
   document.body.classList.remove('nav-active');
   $('nav-hud').classList.add('hidden');
   avatar.userData.hereLabel.visible = true;
@@ -1267,16 +1347,19 @@ function updateNav(dt, t) {
     if (d < bd) { bd = d; bi = i; }
   }
 
-  // レッグ終端（エレベーター等）に到達 → 次フロアのレッグへ自動で切替
+  // レッグ終端（エレベーター等）に到達 → 乗換カードを表示して確認を待つ
   const lastLeg = activeLegIndex >= currentRoute.legs.length - 1;
-  if (!lastLeg && bi >= s.length - 4) {
+  const legEnd = s[s.length - 1];
+  const legEndDist = Math.hypot(legEnd.x - avatar.position.x, legEnd.z - avatar.position.z);
+  if (!lastLeg && (bi >= s.length - 4 || legEndDist < 3.5) && !navMode.waitingTransfer) {
+    navMode.waitingTransfer = true;
+    const cur = currentRoute.legs[activeLegIndex];
     const next = currentRoute.legs[activeLegIndex + 1];
-    setActiveLeg(activeLegIndex + 1);
-    userFloor = next.floor;
-    setViewFloor(next.floor);
-    avatar.position.set(next.points[0].x, floorY(), next.points[0].z);
-    refreshNavRoute();
-    toast(`${next.via}で ${FLOORS[next.floor].short} へ`, 3400);
+    const up = FLOOR_ORDER.indexOf(next.floor) > FLOOR_ORDER.indexOf(cur.floor);
+    $('transfer-text').innerHTML =
+      `<b>${esc(next.via)}</b>で<br><b>${esc(FLOORS[next.floor].short)}（${esc(floorRelText(next.floor, cur.floor))}）</b>へ${up ? '上がって' : '下りて'}ください`;
+    $('transfer-done').textContent = `${FLOORS[next.floor].short} に着いた`;
+    $('transfer-card').classList.remove('hidden');
     return;
   }
 
@@ -1312,8 +1395,8 @@ function updateNav(dt, t) {
   const remainEl = $('nav-remain');
   if (remainEl.textContent !== remainText) remainEl.textContent = remainText;
 
-  // 経路逸脱 → 現在地から最短経路を自動で引き直す
-  const off = geoState.ok && Math.sqrt(bd) > NAV_OFFROUTE_DIST;
+  // 経路逸脱 → 現在地から最短経路を自動で引き直す（乗換待ち中は判定しない）
+  const off = !navMode.waitingTransfer && geoState.ok && Math.sqrt(bd) > NAV_OFFROUTE_DIST;
   $('nav-offroute').classList.toggle('hidden', !off);
   if (off && t - navMode.rerouteAt > 4) {
     navMode.rerouteAt = t;
@@ -1325,7 +1408,7 @@ function updateNav(dt, t) {
   }
 
   // 到着判定（最終レッグのみ）
-  if (lastLeg) {
+  if (lastLeg && !navMode.waitingTransfer) {
     const g = navMode.goal;
     if (Math.hypot(g.x - avatar.position.x, g.z - avatar.position.z) < NAV_ARRIVE_DIST) exitNav(true);
   }
@@ -1333,6 +1416,24 @@ function updateNav(dt, t) {
 
 $('btn-nav').addEventListener('click', () => navMode ? exitNav(false) : startNav());
 $('nav-exit').addEventListener('click', () => exitNav(false));
+
+// 乗換カード「◯F に着いた」→ フロアを切替えて続きの経路を表示
+$('transfer-done').addEventListener('click', () => {
+  $('transfer-card').classList.add('hidden');
+  if (!navMode || !currentRoute) return;
+  const prevFloor = userFloor;
+  const next = currentRoute.legs[activeLegIndex + 1];
+  if (!next) { navMode.waitingTransfer = false; return; }
+  setActiveLeg(activeLegIndex + 1);
+  userFloor = next.floor;
+  setViewFloor(next.floor);
+  flashFloorGhost(prevFloor); // 元のフロアが一瞬透けて、上下移動したことが分かる
+  avatar.position.set(next.points[0].x, floorY(), next.points[0].z);
+  navMode.waitingTransfer = false;
+  navMode.rerouteAt = clock.elapsedTime + 6; // 切替直後の誤リルート防止
+  refreshNavRoute();
+  toast(`${FLOORS[next.floor].label} — 続きの経路を案内します`, 2800);
+});
 $('nav-view').addEventListener('click', () => {
   if (!navMode) return;
   navMode.view = navMode.view === 'follow' ? 'top' : 'follow';
