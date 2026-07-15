@@ -1635,9 +1635,20 @@ canvas.addEventListener('webglcontextrestored', () => {
 
 // 起動
 animate();
+
+// 起動時に現在階を選ばせ、それを出発フロアにする
+function chooseStartFloor(fid) {
+  setViewFloor(fid, { alsoUser: true });
+  $('floor-picker').classList.add('hidden');
+  toast(`現在地を ${FLOORS[fid].label} に設定しました。目的地を検索してみましょう`);
+}
+document.querySelectorAll('.floor-picker-btn').forEach(btn =>
+  btn.addEventListener('click', () => chooseStartFloor(btn.dataset.floor)));
+$('floor-picker-skip').addEventListener('click', () => chooseStartFloor('1f'));
+
 setTimeout(() => {
   $('loader').classList.add('done');
-  toast('ようこそ！グランフロント大阪 北館バーチャルマップへ。右のチップでフロアを切替できます');
+  $('floor-picker').classList.remove('hidden'); // まず現在階を選択
   // オープニングカメラ演出
   camera.position.set(-70, 120, 130);
   flyTo(new THREE.Vector3(0, 54, 64), new THREE.Vector3(0, 0, -2), 2.4);

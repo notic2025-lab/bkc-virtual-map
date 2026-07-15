@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>GFO 北館 バーチャルマップ | GRAND FRONT OSAKA</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23050b16'/><path d='M22 72V28h56v44M22 50h56M50 28v44' fill='none' stroke='%235de4ff' stroke-width='7'/><circle cx='50' cy='50' r='8' fill='%23f6c76a'/></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260715a">
+<link rel="stylesheet" href="css/style.css?v=20260715b">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -178,8 +178,23 @@
       <p>バーチャルマップを構築中…</p>
     </div>
   </div>
+
+  <!-- 現在階の選択（起動時） -->
+  <div id="floor-picker" class="hidden">
+    <div class="floor-picker-inner">
+      <div class="floor-picker-brand"><span class="brand-mark"><span>GFO</span></span></div>
+      <h2>いま何階にいますか？</h2>
+      <p class="floor-picker-sub">現在地の階を選んでください<br><small>フロア案内の出発地点になります</small></p>
+      <div class="floor-picker-list">
+        <button class="floor-picker-btn" data-floor="2f" type="button"><b>2F</b><span>ファッション・雑貨・ナレッジキャピタル</span></button>
+        <button class="floor-picker-btn" data-floor="1f" type="button"><b>1F</b><span>ファッション・カフェ・The&nbsp;Lab.</span></button>
+        <button class="floor-picker-btn" data-floor="b1f" type="button"><b>B1</b><span>レストラン・サービス・イベント</span></button>
+      </div>
+      <button id="floor-picker-skip" type="button">わからない（1Fから案内）</button>
+    </div>
+  </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260715a"></script>
+<script type="module" src="js/app.js?v=20260715b"></script>
 </body>
 </html>

@@ -487,6 +487,48 @@ body.nav-active #drawer { display: none !important; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- 現在階の選択（起動時） ---------- */
+#floor-picker {
+  position: fixed; inset: 0; z-index: 210;
+  background: radial-gradient(120% 80% at 50% 0%, #12233a 0%, var(--bg) 62%);
+  display: grid; place-items: center; padding: 24px;
+  animation: toastIn .35s;
+}
+#floor-picker.hidden { display: none; }
+.floor-picker-inner { width: min(360px, 100%); text-align: center; }
+.floor-picker-brand { margin-bottom: 18px; }
+.floor-picker-brand .brand-mark { width: 54px; height: 54px; margin: 0 auto; font-size: 16px; }
+.floor-picker-inner h2 { font-size: 22px; letter-spacing: .02em; margin-bottom: 8px; }
+.floor-picker-sub { color: var(--txt-dim); font-size: 13px; line-height: 1.7; margin-bottom: 22px; }
+.floor-picker-sub small { font-size: 11px; opacity: .8; }
+.floor-picker-list { display: grid; gap: 12px; margin-bottom: 18px; }
+.floor-picker-btn {
+  display: flex; align-items: center; gap: 16px; text-align: left;
+  padding: 16px 18px; border-radius: 18px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--txt);
+  backdrop-filter: blur(12px); transition: all .18s; font-family: inherit;
+}
+.floor-picker-btn b {
+  flex-shrink: 0; display: grid; place-items: center;
+  width: 52px; height: 52px; border-radius: 14px;
+  background: linear-gradient(135deg, #1c3350, #24405f);
+  font-size: 20px; font-weight: 800; letter-spacing: .02em; color: #eaf6ff;
+}
+.floor-picker-btn span { flex: 1; min-width: 0; font-size: 12.5px; color: var(--txt-dim); line-height: 1.5; }
+.floor-picker-btn:hover, .floor-picker-btn:active {
+  border-color: var(--accent); background: rgba(56,189,248,.12);
+  box-shadow: var(--glow); transform: translateY(-1px);
+}
+.floor-picker-btn:hover b, .floor-picker-btn:active b {
+  background: linear-gradient(135deg, #38bdf8, #6366f1); color: #08101e;
+}
+#floor-picker-skip {
+  border: none; background: none; cursor: pointer;
+  color: var(--txt-dim); font-family: inherit; font-size: 12.5px;
+  padding: 8px; text-decoration: underline; text-underline-offset: 3px;
+}
+#floor-picker-skip:hover { color: var(--txt); }
+
 /* ---------- モバイル ---------- */
 @media (max-width: 640px) {
   :root { font-size: 16px; }
