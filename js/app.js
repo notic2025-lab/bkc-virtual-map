@@ -939,10 +939,15 @@ function setViewFloor(fid, { alsoUser = false } = {}) {
     v.ground.material.opacity = 1;
     v.frame.visible = active;
   }
+  // 現在地ピンは「実際にいる階」を表示しているときだけ立てる
   avatar.visible = userFloor === viewFloor;
   if (alsoUser && !navMode) avatar.position.y = floorY();
-  document.querySelectorAll('#floor-switcher .floor-chip')
-    .forEach(b => b.classList.toggle('active', b.dataset.floor === fid));
+  document.querySelectorAll('#floor-switcher .floor-chip').forEach(b => {
+    b.classList.toggle('active', b.dataset.floor === fid);
+    b.classList.toggle('user-floor', b.dataset.floor === userFloor); // 自分がいる階の目印
+  });
+  // 別の階を見ているときは「この階にいる」自己申告ボタンを出す
+  document.getElementById('im-here').classList.toggle('hidden', viewFloor === userFloor || !!navMode);
 }
 
 // 乗換の瞬間だけ、元いたフロアをうっすら見せて上下移動を演出する
@@ -964,16 +969,24 @@ function floorRelText(fid, base = userFloor) {
   return `${Math.abs(d)}つ${d > 0 ? '上' : '下'}の階`;
 }
 
+// フロアチップは「表示の切替」のみ。現在地の階は変えない（ピンは実際にいる階だけ）
 document.querySelectorAll('#floor-switcher .floor-chip').forEach(btn => {
   btn.addEventListener('click', () => {
     const fid = btn.dataset.floor;
     if (fid === viewFloor) return;
-    if (navMode) { setViewFloor(fid); return; } // ナビ中は表示のみ切替（自動で戻る）
-    setViewFloor(fid, { alsoUser: true });
-    toast(`${FLOORS[fid].label} を表示中`);
-    // ルート表示中にフロアを移動した場合は現在地から引き直す
-    if (currentRoute) showRoute(currentRoute.toId, { fly: false });
+    setViewFloor(fid);
+    if (!navMode) toast(`${FLOORS[fid].label} を表示中${fid === userFloor ? '' : `（現在地は ${FLOORS[userFloor].short}）`}`);
   });
+});
+
+// 「この階にいる」＝現在地フロアの自己申告（エスカレーター等で自力移動したとき用）
+$('im-here').addEventListener('click', () => {
+  userFloor = viewFloor;
+  avatar.position.y = floorY();
+  setViewFloor(viewFloor);
+  toast(`現在地を ${FLOORS[userFloor].label} に設定しました`);
+  // ルート表示中なら新しい現在地から引き直す
+  if (currentRoute && !navMode) showRoute(currentRoute.toId, { fly: false });
 });
 
 setViewFloor('1f', { alsoUser: true }); // 初期表示は1F
