@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import {
-  MAP_W, MAP_D, toWorld, gpsToWorld, CATEGORIES, SHOPS, PLACES, DECOR,
+  MAP_W, MAP_D, toWorld, gpsToWorld, GEO, CATEGORIES, SHOPS, PLACES, DECOR,
   FLOORS, FLOOR_ORDER, FLOOR_LINKS, WATERS, FIELDS,
 } from './data.js';
 import { startAR } from './ar.js';
@@ -1338,7 +1338,17 @@ function focusShop(shop) {
 // ------------------------------------------------------------
 // GPS現在地（実際の位置情報でアバターとナビが動く）
 // ------------------------------------------------------------
-const geoState = { watchId: null, ok: false, world: null, course: null };
+const geoState = { watchId: null, ok: false, world: null, course: null, lat: null, lng: null, accuracy: null };
+
+// 実方位（真北から時計回り）→ ワールドのyaw角。GEO.rotationDegを考慮する
+function courseToWorldYaw(course) {
+  const rot = THREE.MathUtils.degToRad(GEO.rotationDeg);
+  const e = Math.sin(course), n = Math.cos(course);
+  return Math.atan2(
+    e * Math.cos(rot) - n * Math.sin(rot),
+    -(n * Math.cos(rot) + e * Math.sin(rot))
+  );
+}
 
 function geoStatusText() {
   if (!('geolocation' in navigator)) return 'GPS非対応';
@@ -1352,7 +1362,10 @@ function updateGeoChip() {
 function startGeolocation() {
   if (geoState.watchId != null || !('geolocation' in navigator)) return;
   geoState.watchId = navigator.geolocation.watchPosition((pos) => {
-    const { latitude, longitude, heading } = pos.coords;
+    const { latitude, longitude, heading, accuracy } = pos.coords;
+    geoState.lat = latitude;
+    geoState.lng = longitude;
+    geoState.accuracy = accuracy;
     const { x, z } = gpsToWorld(latitude, longitude);
     // マップ範囲＋余白の内側にいるときだけ実位置へ追従する（それ以外は入口基準）
     geoState.ok = Math.abs(x) < MAP_W / 2 + 15 && Math.abs(z) < MAP_D / 2 + 15;
@@ -1480,8 +1493,8 @@ function updateNav(dt, t) {
     const dz = (geoState.world.z - avatar.position.z) * k;
     avatar.position.x += dx;
     avatar.position.z += dz;
-    // 向き: GPSの進行方位 > 実際の移動ベクトル の優先順
-    if (geoState.course != null) turnTo(geoState.course, dt * 4);
+    // 向き: GPSの進行方位 > 実際の移動ベクトル の優先順（方位はマップ回転を補正）
+    if (geoState.course != null) turnTo(courseToWorldYaw(geoState.course), dt * 4);
     else if (moving && Math.hypot(dx, dz) > 0.01) turnTo(Math.atan2(dx, dz), dt * 4);
   }
   avatar.position.y = floorY() + (moving ? Math.abs(Math.sin(t * 10)) * 0.2 : 0);
@@ -1783,6 +1796,13 @@ function chooseStartPlace(placeId) {
 document.querySelectorAll('.floor-picker-btn').forEach(btn =>
   btn.addEventListener('click', () => chooseStartPlace(btn.dataset.start)));
 $('floor-picker-skip').addEventListener('click', () => chooseStartPlace('gate-main'));
+
+// 現地測量モード（?survey）— 通常利用者のペイロードに影響しないよう動的読み込み
+if (new URLSearchParams(location.search).has('survey')) {
+  import('./survey.js')
+    .then(m => m.initSurvey({ scene, geoState, startGeolocation, toast }))
+    .catch(() => toast('測量モードを読み込めませんでした'));
+}
 
 setTimeout(() => {
   $('loader').classList.add('done');

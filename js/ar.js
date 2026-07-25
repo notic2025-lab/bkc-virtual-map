@@ -5,6 +5,7 @@
 //  - カメラ非対応環境では背景をシミュレーション表示にフォールバック
 // ============================================================
 import * as THREE from 'three';
+import { GEO } from './data.js';
 
 let arActive = false;
 let renderer, scene, camera, arrowGroup, video, stream;
@@ -30,8 +31,12 @@ function buildLegs(points) {
       prev.to = b; prev.dist += dist;
       continue;
     }
-    // マップは上が北: -z が北, +x が東 → 方位角 = atan2(east, north)
-    const bearing = Math.atan2(v.x, -v.z);
+    // ワールド→実方位角。マップの回転（GEO.rotationDeg）を補正して真北基準にする
+    const rot = GEO.rotationDeg * Math.PI / 180;
+    const bearing = Math.atan2(
+      v.x * Math.cos(rot) - v.z * Math.sin(rot),
+      -(v.x * Math.sin(rot) + v.z * Math.cos(rot))
+    );
     legs.push({ from: a, to: b, dist, bearing });
   }
   return legs;

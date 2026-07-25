@@ -4,7 +4,7 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v1-20260725';
+const CACHE_VERSION = 'bkc-map-v2-survey';
 
 const PRECACHE = [
   './',
@@ -13,6 +13,8 @@ const PRECACHE = [
   './css/style.css?v=20260725',
   './js/app.js?v=20260725',
   './js/data.js',
+  './js/survey-data.js',
+  './js/survey.js',
   './js/ar.js',
   './vendor/three.module.js',
   './vendor/OrbitControls.js',

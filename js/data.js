@@ -18,11 +18,13 @@ export function toWorld(left, top) {
 
 // ---- GPSジオリファレンス（実座標 ⇔ マップ座標）----
 // lat0/lng0 = マップ中心 (world 0,0) の実座標。rotationDeg = マップ上方向の方位
-// （真北から時計回り）。略図のため推定値。現地でズレがあればここを調整する。
+// （真北から時計回り）。
+// ※ 測量データ（survey-data.js）を使う場合、現在地も地図も同じこの変換を
+//   通るため互いにズレない。この値は「地図の置き方」を決めるだけになる。
 export const GEO = {
-  lat0: 34.9823,
-  lng0: 135.9633,
-  rotationDeg: 35,     // 略図の「上」の実方位（推定・要現地校正）
+  lat0: 34.9822,       // BKCキャンパス中心（34°58'56"N）
+  lng0: 135.9617,      // 135°57'42"E
+  rotationDeg: 35,     // 略図の「上」の実方位（略図使用時のみ影響・推定）
   meterPerUnit: 4,
 };
 
@@ -555,3 +557,63 @@ export const DECOR = [];
 
 // ---- 施設ピクトグラム（未使用）----
 export const FACILITIES = [];
+
+// ============================================================
+// 現地測量データの適用（js/survey-data.js）
+//   測量モード（?survey）で歩いて記録した実GPS座標を略図にマージする。
+//   現在地ピンも地図も同じ gpsToWorld 変換を通るため、測量済みの
+//   通路・入口ではナビと実際の位置が原理的にズレない。
+// ============================================================
+export function worldToPercent(x, z) {
+  return { left: x / MAP_W * 100 + 50, top: z / MAP_D * 100 + 50 };
+}
+export function latLngToPercent(lat, lng) {
+  const { x, z } = gpsToWorld(lat, lng);
+  return worldToPercent(x, z);
+}
+
+import { SURVEY } from './survey-data.js';
+
+try {
+  const fl = FLOORS.campus;
+  if (SURVEY?.nodes && Object.keys(SURVEY.nodes).length) {
+    if (SURVEY.replaceGraph) {
+      fl.navNodes = {};
+      fl.navEdges = [];
+    }
+    // 測量ノードを percent 座標へ変換してグラフに追加
+    for (const [id, p] of Object.entries(SURVEY.nodes)) {
+      fl.navNodes[id] = latLngToPercent(p.lat, p.lng);
+    }
+    for (const [a, b] of SURVEY.edges ?? []) {
+      if (fl.navNodes[a] && fl.navNodes[b] && a !== b) fl.navEdges.push([a, b]);
+    }
+    // 建物・門の実測入口／位置で上書き
+    for (const [id, s] of Object.entries(SURVEY.buildings ?? {})) {
+      const shop = SHOPS.find(x => x.id === id);
+      if (!shop) continue;
+      if (s.entry && fl.navNodes[s.entry]) shop.entry = s.entry;
+      if (s.pin) shop.pin = latLngToPercent(s.pin.lat, s.pin.lng);
+    }
+    for (const [id, s] of Object.entries(SURVEY.places ?? {})) {
+      const pl = PLACES.find(x => x.id === id);
+      if (!pl) continue;
+      if (s.entry && fl.navNodes[s.entry]) pl.entry = s.entry;
+      if (s.pin) pl.pin = latLngToPercent(s.pin.lat, s.pin.lng);
+    }
+    // replaceGraph で略図ノードが消えた場合、参照切れの entry を最寄りノードへ振り直す
+    const nearestNodeId = (pin) => {
+      let best = null, bd = Infinity;
+      for (const [id, p] of Object.entries(fl.navNodes)) {
+        const d = (p.left - pin.left) ** 2 + (p.top - pin.top) ** 2;
+        if (d < bd) { bd = d; best = id; }
+      }
+      return best;
+    };
+    for (const poi of [...SHOPS, ...PLACES]) {
+      if (!fl.navNodes[poi.entry]) poi.entry = nearestNodeId(poi.pin);
+    }
+  }
+} catch (e) {
+  console.warn('survey-data の適用に失敗しました（略図データで動作します）', e);
+}
