@@ -40,7 +40,7 @@ renderer.toneMappingExposure = 1.05;
 
 const scene = new THREE.Scene();
 
-const DAY = { bg: 0x101b28, fog: 0x172433, hemi: 0.9, sun: 1.6, amb: 0.35 };
+const DAY = { bg: 0xe8ece8, fog: 0xe3e8e4, hemi: 1.25, sun: 1.45, amb: 0.62 };
 const NIGHT = { bg: 0x0a1020, fog: 0x0a1020, hemi: 0.25, sun: 0.25, amb: 0.15 };
 let isNight = false;
 
@@ -77,7 +77,7 @@ const sun = new THREE.DirectionalLight(0xfff4e0, DAY.sun);
 sun.position.set(-90, 120, 60);
 sun.castShadow = true;
 sun.shadow.mapSize.set(isMobileDevice ? 1024 : 2048, isMobileDevice ? 1024 : 2048);
-sun.shadow.camera.left = -120; sun.shadow.camera.right = 120;
+sun.shadow.camera.left = -140; sun.shadow.camera.right = 140;
 sun.shadow.camera.top = 100; sun.shadow.camera.bottom = -100;
 sun.shadow.camera.far = 420;
 sun.shadow.bias = -0.0004;
@@ -89,7 +89,7 @@ scene.add(sun);
 //   遠景まで滑らかなグラデーションを描き、その色を反射環境にも使う。
 // ------------------------------------------------------------
 const SKY = {
-  day:   { top: 0x0b1220, bottom: 0x2a2030 },
+  day:   { top: 0xb8cbd7, bottom: 0xf2eee6 },
   night: { top: 0x02050a, bottom: 0x140b14 },
 };
 const skyMat = new THREE.ShaderMaterial({
@@ -142,11 +142,11 @@ function makeCampusGroundTexture() {
   const px = (left) => left / 100 * W;
   const py = (top) => top / 100 * H;
 
-  // 芝生ベース（夕暮れのキャンパスの深緑）
+  // 芝生ベース（案内図として読みやすい、穏やかな昼の緑）
   const grad = g.createRadialGradient(W / 2, H / 2, H * 0.1, W / 2, H / 2, W * 0.62);
-  grad.addColorStop(0, '#1a3a26');
-  grad.addColorStop(0.7, '#142c1e');
-  grad.addColorStop(1, '#0d1f16');
+  grad.addColorStop(0, '#a9bca2');
+  grad.addColorStop(0.7, '#91aa8b');
+  grad.addColorStop(1, '#7f9b7b');
   g.fillStyle = grad;
   g.fillRect(0, 0, W, H);
 
@@ -154,18 +154,18 @@ function makeCampusGroundTexture() {
   for (let i = 0; i < 900; i++) {
     const x = (Math.sin(i * 12.9898) * 0.5 + 0.5) * W;
     const y = (Math.sin(i * 78.233) * 0.5 + 0.5) * H;
-    const r = 8 + (Math.sin(i * 3.7) * 0.5 + 0.5) * 26;
-    g.fillStyle = i % 2 ? 'rgba(30,66,44,0.16)' : 'rgba(10,24,17,0.16)';
+    const r = 5 + (Math.sin(i * 3.7) * 0.5 + 0.5) * 14;
+    g.fillStyle = i % 2 ? 'rgba(224,235,218,0.055)' : 'rgba(61,86,59,0.035)';
     g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
   }
 
   // 外周の自然緑地帯
-  g.fillStyle = 'rgba(9,26,17,0.55)';
+  g.fillStyle = 'rgba(74,105,70,0.12)';
   for (let i = 0; i < 140; i++) {
     const t = i / 140 * Math.PI * 2;
     const x = W / 2 + Math.cos(t) * (W * 0.5 - 26) + Math.sin(i * 7.1) * 30;
     const y = H / 2 + Math.sin(t) * (H * 0.5 - 22) + Math.cos(i * 5.3) * 22;
-    g.beginPath(); g.arc(x, y, 26 + (i % 5) * 7, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(x, y, 18 + (i % 5) * 5, 0, Math.PI * 2); g.fill();
   }
 
   // グラウンド・競技場
@@ -176,34 +176,34 @@ function makeCampusGroundTexture() {
     g.translate(x, y);
     if (f.kind === 'track') {
       // 陸上トラック（クインススタジアム）
-      g.fillStyle = '#7c3d2e';
+      g.fillStyle = '#a76455';
       g.beginPath(); g.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#1f5a33';
+      g.fillStyle = '#76966f';
       g.beginPath(); g.ellipse(0, 0, w / 2 - 26, h / 2 - 26, 0, 0, Math.PI * 2); g.fill();
       g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 2;
       for (const k of [8, 14, 20]) {
         g.beginPath(); g.ellipse(0, 0, w / 2 - k, h / 2 - k, 0, 0, Math.PI * 2); g.stroke();
       }
     } else if (f.kind === 'dirt') {
-      g.fillStyle = '#6d5a41';
+      g.fillStyle = '#b39b76';
       g.fillRect(-w / 2, -h / 2, w, h);
       g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 3;
       g.strokeRect(-w / 2 + 5, -h / 2 + 5, w - 10, h - 10);
     } else if (f.kind === 'tennis') {
-      g.fillStyle = '#2e5f52';
+      g.fillStyle = '#6e9a8b';
       g.fillRect(-w / 2, -h / 2, w, h);
       g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 2;
       const n = 3, cw = w / n;
       for (let i = 0; i < n; i++) g.strokeRect(-w / 2 + i * cw + 6, -h / 2 + 6, cw - 12, h - 12);
     } else if (f.kind === 'turf') {
-      g.fillStyle = '#1f6b3a';
+      g.fillStyle = '#5f966a';
       g.fillRect(-w / 2, -h / 2, w, h);
       g.strokeStyle = 'rgba(255,255,255,0.4)'; g.lineWidth = 3;
       g.strokeRect(-w / 2 + 5, -h / 2 + 5, w - 10, h - 10);
       g.beginPath(); g.moveTo(0, -h / 2 + 5); g.lineTo(0, h / 2 - 5); g.stroke();
     } else if (f.kind === 'plot') {
       // 薬草園（畝のある植栽区画）
-      g.fillStyle = '#3d4d2b';
+      g.fillStyle = '#87956b';
       g.fillRect(-w / 2, -h / 2, w, h);
       g.strokeStyle = 'rgba(214,222,180,0.35)'; g.lineWidth = 2;
       for (let i = 1; i < 4; i++) {
@@ -218,21 +218,25 @@ function makeCampusGroundTexture() {
   for (const wtr of WATERS) {
     const x = px(wtr.left), y = py(wtr.top);
     const rx = wtr.rx / 100 * W, ry = wtr.ry / 100 * H;
-    g.fillStyle = '#12374f';
+    g.fillStyle = '#6d9eb4';
     g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = 'rgba(120,190,230,0.45)'; g.lineWidth = 3;
+    g.strokeStyle = 'rgba(220,240,246,0.75)'; g.lineWidth = 3;
     g.stroke();
     g.fillStyle = 'rgba(140,200,235,0.12)';
     g.beginPath(); g.ellipse(x - rx * 0.2, y - ry * 0.25, rx * 0.55, ry * 0.4, 0, 0, Math.PI * 2); g.fill();
   }
 
-  // 通路（ナビグラフをそのまま舗装として描画。プロムナードは太く）
+  // 通路（ナビグラフをそのまま舗装として描画。メインストリートは太く）
   const fl = FLOORS.campus;
-  const mainNodes = new Set(['GM', 'PM1', 'BT', 'CS', 'PM2', 'PM3', 'PM4', 'PM5', 'PM6', 'PM7', 'PM8']);
+  const mainNodes = new Set([
+    'GM', 'FA1', 'FA2', 'FA3', 'BT', 'FA4', 'CS',                 // フロンティアアベニュー
+    'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7',                      // キャンパスプロムナード
+    'B1', 'B2', 'B3', 'B4', 'B5',                                  // ビュートストリート
+  ]);
   g.lineCap = 'round'; g.lineJoin = 'round';
   for (const pass of [
-    { color: 'rgba(20,32,26,0.9)', extra: 10 },   // 縁取り
-    { color: '#c9bda0', extra: 0 },               // 舗装
+    { color: 'rgba(82,91,80,0.28)', extra: 10 },  // 縁取り
+    { color: '#e5dfd2', extra: 0 },               // 舗装
   ]) {
     for (const [a, b] of fl.navEdges) {
       const A = fl.navNodes[a], B = fl.navNodes[b];
@@ -250,11 +254,11 @@ function makeCampusGroundTexture() {
   {
     const cs = fl.navNodes.CS;
     const x = px(cs.left), y = py(cs.top);
-    g.fillStyle = '#c9bda0';
+    g.fillStyle = '#e5dfd2';
     g.beginPath(); g.arc(x, y, 64, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = 'rgba(244,63,94,0.55)'; g.lineWidth = 5;
+    g.strokeStyle = 'rgba(141,25,55,0.48)'; g.lineWidth = 5;
     g.beginPath(); g.arc(x, y, 44, 0, Math.PI * 2); g.stroke();
-    g.fillStyle = 'rgba(31,90,51,0.9)';
+    g.fillStyle = 'rgba(91,126,84,0.95)';
     g.beginPath(); g.arc(x, y, 22, 0, Math.PI * 2); g.fill();
   }
 
@@ -294,7 +298,7 @@ for (const fid of FLOOR_ORDER) {
   ];
   const frame = new THREE.LineLoop(
     new THREE.BufferGeometry().setFromPoints(framePoints),
-    new THREE.LineBasicMaterial({ color: 0xf43f5e, transparent: true, opacity: 0.72 })
+    new THREE.LineBasicMaterial({ color: 0x8d1937, transparent: true, opacity: 0.18 })
   );
   frame.renderOrder = 4;
   scene.add(frame);
@@ -305,8 +309,8 @@ for (const fid of FLOOR_ORDER) {
 const base = new THREE.Mesh(
   new THREE.BoxGeometry(MAP_W + 6, 3, MAP_D + 6),
   new THREE.MeshStandardMaterial({
-    color: 0x140f1a, emissive: 0x2a0f1c, emissiveIntensity: 0.55,
-    roughness: 0.62, metalness: 0.28,
+    color: 0xc8c3b8, emissive: 0x000000, emissiveIntensity: 0,
+    roughness: 0.9, metalness: 0,
   })
 );
 base.position.y = FLOORS[FLOOR_ORDER[0]].y - 2.4;
@@ -363,7 +367,7 @@ const labelSprites = [];
 const shopGroup = new THREE.Group();
 scene.add(shopGroup);
 
-const GLASS_OPACITY = 0.5;
+const GLASS_OPACITY = 0.9;
 
 // ロゴは外部画像に依存せず、公式マップ番号＋カテゴリ色のモノグラムSVGを生成して使う
 // （外部リクエストゼロ = 障害点ゼロ。同時アクセスが増えても外部サーバーに負荷をかけない）
@@ -391,10 +395,10 @@ for (const shop of SHOPS) {
   const h = shop.size.h ?? 4;
   const geo = roundedBoxGeo(shop.size.w, shop.size.d, h);
   const mat = new THREE.MeshStandardMaterial({
-    color: col, roughness: 0.12, metalness: 0.0,
+    color: col, roughness: 0.72, metalness: 0.0,
     transparent: true, opacity: GLASS_OPACITY,
     emissive: col, emissiveIntensity: 0.0,
-    envMapIntensity: 1.1, depthWrite: false,
+    envMapIntensity: 0.18, depthWrite: true,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(x, fy, z);
@@ -407,7 +411,7 @@ for (const shop of SHOPS) {
   // 発光する輪郭フレーム（区画の外形＝ホログラム境界）
   const edges = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(shop.size.w, h, shop.size.d)),
-    new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9 })
+    new THREE.LineBasicMaterial({ color: 0x34413c, transparent: true, opacity: 0.28 })
   );
   edges.position.set(x, fy + h / 2, z);
   edges.renderOrder = 5;
@@ -417,8 +421,8 @@ for (const shop of SHOPS) {
   const crown = new THREE.Mesh(
     roundedBoxGeo(shop.size.w * 0.9, shop.size.d * 0.9, 0.35),
     new THREE.MeshStandardMaterial({
-      color: col, emissive: col, emissiveIntensity: 0.45,
-      roughness: 0.3, metalness: 0.25, envMapIntensity: 1.1,
+      color: col, emissive: 0x000000, emissiveIntensity: 0,
+      roughness: 0.68, metalness: 0, envMapIntensity: 0.15,
     })
   );
   crown.position.set(x, fy + h, z);
@@ -474,18 +478,22 @@ scene.add(treeGroup);
   const trunkGeo = new THREE.CylinderGeometry(0.22, 0.3, 1.6, 6);
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 1 });
   const leafGeo = new THREE.IcosahedronGeometry(1.5, 0);
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a8a56, roughness: 0.9, flatShading: true });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x567b54, roughness: 0.95, flatShading: true });
   const spots = [
-    // キャンパスプロムナード並木（正門〜セントラルサーカス）
-    [50.2, 62], [53.8, 62], [50.2, 66], [53.8, 66], [50.2, 71], [54.2, 71],
-    [50.2, 79], [53.8, 79], [50.2, 86], [53.8, 86], [49.8, 90], [54.2, 90],
-    // ビュートストリート沿い
-    [18, 64.5], [22, 70.5], [26, 70.5], [31, 64.5], [35, 70], [42, 66],
-    // 緑地・散策路
-    [46, 22], [57, 36], [30, 52], [33, 57], [20, 50], [12, 48], [10, 62],
-    [66, 54], [64, 66], [80, 60], [84, 55], [88, 66], [74, 60],
-    [22, 38], [14, 30], [20, 16], [70, 12], [76, 32], [84, 28], [90, 30],
-    [88, 48], [44, 78], [34, 74], [26, 80], [60, 88], [64, 84],
+    // フロンティアアベニュー並木（正門〜セントラルサーカス）
+    [52, 60], [56, 60], [51.5, 67], [56, 67], [51.5, 75], [55.5, 75],
+    [51.5, 83], [56.5, 83], [52.5, 91], [57.5, 91],
+    // キャンパスプロムナード並木（サーカス〜第一グラウンド）
+    [57, 42], [60.5, 44.5], [61, 37.5], [64.5, 40], [65, 33], [68.5, 35.5],
+    [69, 28.5], [72, 31], [72, 24], [75, 26.5],
+    // 自然緑地（正門の北西に広がる森）
+    [42, 62], [45, 66], [40, 68], [44, 72], [37, 65], [35, 72], [38, 76],
+    [31, 68], [33, 76], [28, 71], [45, 76], [47, 68], [43, 58],
+    // 外周・散策路
+    [10, 66], [8, 74], [12, 78], [7, 88], [30, 90], [45, 92], [62, 92],
+    [72, 90], [80, 82], [82, 72], [84, 64], [88, 46], [86, 30], [80, 30],
+    [60, 62], [64, 58], [68, 58], [56, 30], [50, 17], [45, 20], [34, 26],
+    [30, 38], [26, 48], [20, 56], [24, 60], [18, 64],
   ];
   // 池の周りの植栽
   for (const w of WATERS) {
@@ -531,8 +539,8 @@ let particles;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  particles = new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0xf6c76a, size: 0.35, transparent: true, opacity: 0.8, depthWrite: false,
+particles = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0xf6c76a, size: 0.25, transparent: true, opacity: 0.18, depthWrite: false,
   }));
   scene.add(particles);
 }
@@ -1132,6 +1140,25 @@ $('btn-north').addEventListener('click', () => {
   flyTo(controls.target.clone().add(new THREE.Vector3(0, height, distance * 0.58)), controls.target.clone(), 0.65);
   toast('北を上に戻しました');
 });
+// 現在地が画面の「手前（下側）」に来るようにカメラを構える。
+// 自分の位置からキャンパス中心方向を見る構図 = 目の前に道と建物が広がり、
+// 地図と実際の視界が対応しやすい（例: 第一グラウンド横の駐車場にいれば
+// 駐車場が手前、キャンパスが奥に見える）。
+function frameFromCurrentPosition(dur = 1.2) {
+  const p = avatar.position.clone().setY(0);
+  const dir = p.clone().negate().setY(0);        // キャンパス中心(0,0)へ向かう方向
+  if (dir.lengthSq() < 100) dir.set(0, 0, -1);   // 中心付近にいるときは北向きで固定
+  else dir.normalize();
+  const target = p.clone().addScaledVector(dir, 34);            // 少し先を注視
+  const camPos = p.clone().addScaledVector(dir, -34).setY(52);  // 自分の後方上空
+  flyTo(camPos, target, dur);
+}
+
+$('btn-locate').addEventListener('click', () => {
+  frameFromCurrentPosition(0.65);
+  toast(geoState.ok ? '現在地を表示しました' : '現在地を取得中です');
+  startGeolocation();
+});
 
 $('btn-clear').addEventListener('click', () => { exitNav(false); clearRoute(); });
 $('btn-ar').addEventListener('click', () => {
@@ -1227,9 +1254,78 @@ function searchScore(shop, query) {
   return best;
 }
 
+const STUDENT_SHORTCUTS = [
+  { label: '授業棟', sub: '教室を探す', query: '教室', glyph: '講' },
+  { label: '学食', sub: 'ランチ・生協', query: '学食', glyph: '食' },
+  { label: '自習場所', sub: '図書館・ぴあら', query: '自習', glyph: '習' },
+  { label: '履修・成績', sub: '学びステーション', query: '履修', glyph: '窓' },
+];
+const RECENT_SHOPS_KEY = 'bkc-map-recent-shops';
+
+function recentShopIds() {
+  try {
+    const ids = JSON.parse(localStorage.getItem(RECENT_SHOPS_KEY) || '[]');
+    return Array.isArray(ids) ? ids.filter(id => SHOPS.some(s => s.id === id)).slice(0, 3) : [];
+  } catch {
+    return [];
+  }
+}
+
+function recordRecentShop(shop) {
+  try {
+    const ids = [shop.id, ...recentShopIds().filter(id => id !== shop.id)].slice(0, 3);
+    localStorage.setItem(RECENT_SHOPS_KEY, JSON.stringify(ids));
+  } catch { /* 履歴を保存できない環境では、そのまま動作を継続 */ }
+}
+
+function appendStudentHome(list) {
+  const home = document.createElement('section');
+  home.className = 'student-home';
+  home.innerHTML = `
+    <div class="list-section-title"><span>すぐ探す</span><small>在学生向け</small></div>
+    <div class="student-shortcuts">
+      ${STUDENT_SHORTCUTS.map((item, index) => `
+        <button type="button" data-shortcut="${index}">
+          <i>${item.glyph}</i><span><b>${item.label}</b><small>${item.sub}</small></span>
+        </button>`).join('')}
+    </div>`;
+  home.querySelectorAll('[data-shortcut]').forEach(button => {
+    button.addEventListener('click', () => {
+      const item = STUDENT_SHORTCUTS[Number(button.dataset.shortcut)];
+      $('search').value = item.query;
+      renderShopList(item.query, 'all');
+    });
+  });
+  list.appendChild(home);
+
+  const recent = recentShopIds().map(id => SHOPS.find(s => s.id === id)).filter(Boolean);
+  if (recent.length) {
+    const section = document.createElement('section');
+    section.className = 'recent-places';
+    section.innerHTML = `
+      <div class="list-section-title"><span>最近見た場所</span></div>
+      <div class="recent-place-row">${recent.map(s =>
+        `<button type="button" data-recent="${s.id}"><b>${esc(s.short ?? s.name)}</b><small>${esc(s.tag)}</small></button>`
+      ).join('')}</div>`;
+    section.querySelectorAll('[data-recent]').forEach(button => {
+      button.addEventListener('click', () => {
+        const shop = SHOPS.find(s => s.id === button.dataset.recent);
+        if (shop) startGuidanceTo(shop);
+      });
+    });
+    list.appendChild(section);
+  }
+
+  const heading = document.createElement('div');
+  heading.className = 'list-section-title facilities-title';
+  heading.innerHTML = '<span>すべての施設</span><small>タップしてルート表示</small>';
+  list.appendChild(heading);
+}
+
 function renderShopList(filter = '', cat = 'all') {
   const list = $('shop-list');
   list.innerHTML = '';
+  if (!filter && cat === 'all') appendStudentHome(list);
   const results = SHOPS
     .filter(s => cat === 'all' || s.cat === cat)
     .map(s => ({ shop: s, score: searchScore(s, filter) }))
@@ -1270,6 +1366,12 @@ $('quick-destination').addEventListener('click', () => {
   renderShopList('', 'all');
   setTimeout(() => $('search').focus(), 280);
 });
+addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    $('quick-destination').click();
+  }
+});
 
 // カテゴリフィルタ
 let activeCat = 'all';
@@ -1290,6 +1392,7 @@ document.querySelectorAll('.filter-chip').forEach(btn => {
 let cardShop = null;
 function openCard(shop) {
   if (document.body.classList.contains('nav-active')) return;
+  recordRecentShop(shop);
   cardShop = shop;
   $('card-logo-img').src = shop.logo;
   $('card-tag').textContent = shop.tag;
@@ -1318,6 +1421,7 @@ addEventListener('keydown', (event) => { if (event.key === 'Escape') closeCard()
 
 function startGuidanceTo(shop) {
   if (!showRoute(shop.id)) return;
+  recordRecentShop(shop);
   closeCard();
   $('drawer').classList.remove('open');
   setRoutePanelCollapsed(false);
@@ -1692,7 +1796,7 @@ function animate() {
     s._crown.material.transparent = true;
     s._crown.material.opacity = selected ? 1 : detailView ? 0.82 : areaView ? 0.55 : 0.45;
     s._mesh.material.opacity = on
-      ? (selected ? 0.78 : detailView ? 0.62 : areaView ? 0.55 : 0.5)
+      ? (selected ? 1 : detailView ? 0.96 : areaView ? 0.92 : 0.88)
       : 0.015;
   }
   $('zoom-hint').classList.toggle('hidden', areaView);
@@ -1803,8 +1907,7 @@ async function initStartLocation() {
   const ok = await waitForGpsFix(9000);
   if (ok) {
     avatar.position.set(geoState.world.x, 0, geoState.world.z);
-    const target = avatar.position.clone().setY(0);
-    flyTo(target.clone().add(new THREE.Vector3(0, 64, 50)), target, 1.4);
+    frameFromCurrentPosition(1.4); // 現在地が手前に来る構図でキャンパスを望む
     toast('現在地から案内します');
   } else if (geoState.lat != null) {
     toast('キャンパス外のため、出発地点を正門にしています');

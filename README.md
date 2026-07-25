@@ -77,7 +77,7 @@ GPSの位置合わせは `js/data.js` の `GEO`（中心緯度経度・回転角
 
 ```
 index.html            … UIレイアウト・PWA登録
-css/style.css         … デザイン（立命館クリムゾンのグラスモーフィズムUI）
+css/style.css         … デザイン（立命館クリムゾン＋昼光ベースの案内地図UI）
 js/data.js            … 建物 / 施設 / 通路グラフ / GPSジオリファレンス
 js/app.js             … 3Dシーン・地面生成・経路探索・GPSナビ・UI
 js/ar.js              … ARナビ（カメラ + コンパス + Three.jsオーバーレイ）

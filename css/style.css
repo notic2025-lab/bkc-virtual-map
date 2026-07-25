@@ -532,3 +532,461 @@ body.nav-active #drawer { display: none !important; }
   #nav-controls { gap: 7px; }
   #nav-controls .chip-btn { min-height: 48px; padding-inline: 7px; font-size: 13px; }
 }
+
+/* ============================================================
+   Editorial daylight theme
+   立命館らしい端正さと、屋外での判読性を優先した案内地図UI。
+   ============================================================ */
+:root {
+  --bg: #f5f3ee;
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-solid: #fffefa;
+  --surface-raised: #ffffff;
+  --line: rgba(33, 39, 42, 0.12);
+  --line-strong: rgba(33, 39, 42, 0.24);
+  --txt: #202629;
+  --txt-dim: #687176;
+  --accent: #8d1937;
+  --accent-strong: #74122c;
+  --accent-soft: rgba(141, 25, 55, 0.09);
+  --ok: #36765b;
+  --warn: #a76c20;
+  --shadow: 0 3px 12px rgba(30, 35, 32, 0.08), 0 12px 32px rgba(30, 35, 32, 0.06);
+  --shadow-lg: 0 20px 60px rgba(30, 35, 32, 0.16);
+  --radius: 12px;
+}
+
+body {
+  font-family: "Avenir Next", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  letter-spacing: 0.01em;
+}
+
+.world-atmosphere {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 24%),
+    radial-gradient(circle at 50% 55%, transparent 54%, rgba(43, 55, 47, 0.1));
+}
+
+#topbar {
+  align-items: stretch;
+  gap: 8px;
+  padding: max(16px, env(safe-area-inset-top)) 18px 0;
+}
+
+.brand-lockup {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 7px 18px 7px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px) saturate(1.1);
+}
+
+.brand-mark,
+.loader-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  background: var(--accent);
+  color: #fff;
+  font: 700 20px/1 Georgia, "Times New Roman", serif;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.brand-copy strong {
+  font-size: 12px;
+  line-height: 1.2;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+}
+
+.brand-copy small {
+  color: var(--txt-dim);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+#quick-destination {
+  flex: 0 1 420px;
+  min-height: 58px;
+  max-width: 420px;
+  padding: 7px 10px 7px 16px;
+  gap: 12px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+#quick-destination:hover {
+  border-color: rgba(141, 25, 55, 0.35);
+  box-shadow: 0 4px 14px rgba(30, 35, 32, 0.1);
+}
+
+.sb-text {
+  display: grid;
+  gap: 1px;
+  color: var(--txt);
+}
+
+.sb-text b {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sb-text small {
+  color: var(--txt-dim);
+  font-size: 10.5px;
+}
+
+.sb-search {
+  order: -1;
+  color: var(--accent);
+}
+
+#quick-destination kbd {
+  border: 1px solid var(--line);
+  border-bottom-color: var(--line-strong);
+  border-radius: 5px;
+  padding: 4px 6px;
+  color: var(--txt-dim);
+  background: rgba(247, 246, 242, 0.9);
+  font: 600 10px/1 inherit;
+  white-space: nowrap;
+}
+
+.round-btn {
+  width: 58px;
+  height: 58px;
+  border-radius: 12px;
+  color: var(--accent);
+}
+
+#filters {
+  top: calc(max(16px, env(safe-area-inset-top)) + 68px);
+  left: 18px;
+  gap: 6px;
+}
+
+.filter-chip {
+  min-height: 36px;
+  padding-inline: 13px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  color: #4e585c;
+  box-shadow: 0 2px 8px rgba(32, 38, 41, 0.04);
+  backdrop-filter: blur(14px);
+}
+
+.filter-chip:hover {
+  color: var(--accent);
+  border-color: rgba(141, 25, 55, 0.22);
+}
+
+.filter-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.filter-chip.active i { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5); }
+
+#map-controls {
+  right: 16px;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+#map-controls button {
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  color: #4a5357;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+#map-controls button:last-child { border-bottom: 0; }
+#map-controls button:hover { color: var(--accent); background: rgba(141, 25, 55, 0.055); }
+#btn-north svg { color: var(--accent); }
+
+#map-credit {
+  position: absolute;
+  left: 18px;
+  bottom: 16px;
+  z-index: 8;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(32, 38, 41, 0.66);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 5px rgba(255, 255, 255, 0.8);
+}
+
+#map-credit span + span {
+  padding-left: 8px;
+  border-left: 1px solid rgba(32, 38, 41, 0.3);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+#drawer {
+  background: rgba(255, 254, 250, 0.98);
+  box-shadow: -20px 0 60px rgba(30, 35, 32, 0.14);
+}
+
+.drawer-head { background: #fffefa; }
+#search {
+  color: var(--txt);
+  background: #f4f2ed;
+}
+#search:focus { border-color: rgba(141, 25, 55, 0.45); background: #fff; }
+.icon-btn { background: #f1efea; color: var(--txt); }
+.icon-btn:hover { background: #e9e6df; }
+.shop-item { border-bottom: 1px solid rgba(33, 39, 42, 0.06); border-radius: 8px; }
+.shop-item:hover { background: rgba(141, 25, 55, 0.05); }
+.shop-item .thumb { background: #f4f1eb; }
+.floor-badge { background: #eeece6; color: var(--txt-dim); }
+
+#shop-card,
+#route-panel,
+.transfer-inner {
+  background: rgba(255, 254, 250, 0.97);
+  border-color: rgba(33, 39, 42, 0.13);
+}
+
+.card-logo {
+  height: 82px;
+  background: #f3f0e9;
+  border-bottom: 1px solid var(--line);
+}
+.card-logo img { max-height: 62px; }
+#card-close { background: rgba(255, 254, 250, 0.9); }
+.card-tag { background: #f0eee9; }
+#card-desc { color: #586165; }
+.ghost-btn { color: var(--txt); background: rgba(255, 255, 255, 0.45); }
+.chip-btn, .ar-btn { color: var(--txt); background: rgba(255, 255, 255, 0.7); }
+.route-step { background: #f4f2ed; }
+#route-info {
+  color: #2b5f49;
+  background: rgba(54, 118, 91, 0.08);
+  border-color: rgba(54, 118, 91, 0.2);
+}
+
+#toast {
+  color: #fff;
+  background: rgba(32, 38, 41, 0.92);
+  border-color: transparent;
+}
+
+#nav-banner,
+#nav-controls .chip-btn {
+  background: rgba(255, 254, 250, 0.95);
+}
+
+#loader {
+  background: #f5f3ee;
+  transition: opacity 0.35s, visibility 0s linear 0.35s;
+}
+
+#loader.done { visibility: hidden; }
+.loader-inner {
+  display: grid;
+  justify-items: center;
+  color: var(--txt-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+.loader-mark {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 22px;
+  font-size: 25px;
+}
+.loader-ring {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 14px;
+  border-width: 2px;
+  border-color: rgba(33, 39, 42, 0.1);
+  border-top-color: var(--accent);
+}
+
+@media (max-width: 860px) {
+  .brand-copy small { display: none; }
+  .brand-lockup { padding-right: 10px; }
+}
+
+@media (max-width: 640px) {
+  #topbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) 50px;
+    padding: max(10px, env(safe-area-inset-top)) 10px 0;
+  }
+  .brand-lockup {
+    min-height: 50px;
+    padding: 4px;
+    border-radius: 10px;
+  }
+  .brand-mark { width: 40px; height: 40px; }
+  .brand-copy { display: none; }
+  #quick-destination {
+    width: auto;
+    min-width: 0;
+    min-height: 50px;
+    padding: 6px 12px;
+    border-radius: 10px;
+  }
+  .sb-text small, #quick-destination kbd { display: none; }
+  .sb-text b { font-size: 12.5px; }
+  .round-btn { width: 50px; height: 50px; border-radius: 10px; }
+  #filters {
+    top: calc(max(10px, env(safe-area-inset-top)) + 60px);
+    left: 10px;
+  }
+  .filter-chip { min-height: 35px; }
+  #map-controls { right: 10px; top: 48%; }
+  #map-controls button { width: 44px; height: 44px; }
+  #map-credit { left: 10px; bottom: 10px; }
+  .card-logo { height: 72px; }
+}
+
+/* ---------- 在学生向けクイックアクセス ---------- */
+.student-home,
+.recent-places {
+  padding: 10px 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.list-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 2px 9px;
+}
+
+.list-section-title span {
+  color: var(--txt);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.list-section-title small {
+  color: var(--txt-dim);
+  font-size: 9.5px;
+}
+
+.facilities-title {
+  padding: 18px 10px 6px;
+}
+
+.student-shortcuts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.student-shortcuts button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 60px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f6f4ef;
+  color: var(--txt);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+
+.student-shortcuts button:hover {
+  border-color: rgba(141, 25, 55, 0.3);
+  background: #fff;
+  transform: translateY(-1px);
+}
+
+.student-shortcuts i {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: normal 800 13px/1 inherit;
+}
+
+.student-shortcuts span,
+.recent-place-row span { min-width: 0; }
+
+.student-shortcuts b,
+.student-shortcuts small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-shortcuts b { font-size: 11.5px; }
+.student-shortcuts small { margin-top: 2px; color: var(--txt-dim); font-size: 8.5px; }
+
+.recent-place-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.recent-place-row button {
+  min-width: 0;
+  padding: 9px 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--txt);
+  text-align: left;
+  cursor: pointer;
+}
+
+.recent-place-row b,
+.recent-place-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-place-row b { font-size: 10.5px; }
+.recent-place-row small { margin-top: 3px; color: var(--txt-dim); font-size: 8px; }
+
+@media (max-width: 640px) {
+  .student-shortcuts button { min-height: 64px; }
+  .student-shortcuts b { font-size: 12px; }
+  .student-shortcuts small { font-size: 9px; }
+}

@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>立命館大学BKC バーチャルキャンパスマップ | Ritsumeikan BKC</title>
 <meta name="description" content="立命館大学びわこ・くさつキャンパス（BKC）の3Dバーチャルマップ。建物検索・最短経路案内・GPSナビ・ARナビ対応。">
-<meta name="theme-color" content="#0c0a10">
+<meta name="theme-color" content="#f5f3ee">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%239d1535'/><text x='50' y='56' font-family='Georgia,serif' font-size='58' font-weight='700' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'>R</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260726">
+<link rel="stylesheet" href="css/style.css?v=20260728b">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -39,40 +39,52 @@
   <canvas id="scene"></canvas>
   <div class="world-atmosphere" aria-hidden="true"></div>
 
-  <!-- 検索バー -->
+  <!-- ブランド・検索 -->
   <header id="topbar">
+    <div class="brand-lockup" aria-label="立命館大学 BKC キャンパスマップ">
+      <span class="brand-mark" aria-hidden="true">R</span>
+      <span class="brand-copy">
+        <strong>BKC CAMPUS MAP</strong>
+        <small>立命館大学 びわこ・くさつキャンパス</small>
+      </span>
+    </div>
     <button id="quick-destination" type="button" aria-label="目的地を検索">
-      <span class="sb-brand">R</span>
-      <span class="sb-text">どこへ行きますか？</span>
       <svg class="sb-search" aria-hidden="true"><use href="#i-search"/></svg>
+      <span class="sb-text"><b>目的地を検索</b><small>棟名・通称・施設名から</small></span>
+      <kbd>⌘ K</kbd>
     </button>
-    <button id="btn-list" class="round-btn" type="button" title="施設一覧"><svg><use href="#i-grid"/></svg></button>
+    <button id="btn-list" class="round-btn" type="button" title="施設一覧" aria-label="施設一覧"><svg><use href="#i-grid"/></svg></button>
   </header>
 
   <!-- カテゴリフィルタ -->
   <div id="filters">
     <button class="filter-chip active" data-cat="all">すべて</button>
-    <button class="filter-chip" data-cat="lecture"><i style="background:#60a5fa"></i>授業・学び</button>
-    <button class="filter-chip" data-cat="food"><i style="background:#fbbf24"></i>食堂・カフェ</button>
-    <button class="filter-chip" data-cat="admin"><i style="background:#fb7185"></i>窓口・サポート</button>
-    <button class="filter-chip" data-cat="research"><i style="background:#2dd4bf"></i>研究・実験棟</button>
-    <button class="filter-chip" data-cat="sports"><i style="background:#4ade80"></i>スポーツ</button>
-    <button class="filter-chip" data-cat="circle"><i style="background:#f472b6"></i>課外・サークル</button>
-    <button class="filter-chip" data-cat="life"><i style="background:#cbd5e1"></i>生活・施設</button>
+    <button class="filter-chip" data-cat="lecture"><i style="background:#58759a"></i>授業・自習</button>
+    <button class="filter-chip" data-cat="food"><i style="background:#b37b2d"></i>食堂・カフェ</button>
+    <button class="filter-chip" data-cat="admin"><i style="background:#a43850"></i>履修・相談</button>
+    <button class="filter-chip" data-cat="research"><i style="background:#4f8179"></i>研究・実験棟</button>
+    <button class="filter-chip" data-cat="sports"><i style="background:#63815d"></i>スポーツ</button>
+    <button class="filter-chip" data-cat="circle"><i style="background:#805c78"></i>課外・サークル</button>
+    <button class="filter-chip" data-cat="life"><i style="background:#707b82"></i>生活・設備</button>
   </div>
 
   <!-- 地図操作 -->
   <div id="map-controls" aria-label="地図操作">
     <button id="btn-north" type="button" title="北を上に戻す"><svg><use href="#i-north"/></svg><small>北</small></button>
+    <button id="btn-locate" type="button" title="現在地を中央に表示"><svg><use href="#i-gps"/></svg></button>
     <button id="btn-zoom-in" type="button" title="拡大"><svg><use href="#i-plus"/></svg></button>
     <button id="btn-zoom-out" type="button" title="縮小"><svg><use href="#i-minus"/></svg></button>
   </div>
   <div id="zoom-hint"><span>＋</span> 拡大すると建物情報を表示</div>
+  <div id="map-credit" aria-hidden="true">
+    <span>BKC CAMPUS GUIDE</span>
+    <span>概略図</span>
+  </div>
 
   <!-- 施設一覧ドロワー -->
   <aside id="drawer">
     <div class="drawer-head">
-      <input id="search" type="search" placeholder="建物・施設を検索（例: 食堂・図書館）">
+      <input id="search" type="search" placeholder="棟名・通称・施設名（例: コラI）">
       <button id="drawer-close" class="icon-btn" aria-label="閉じる"><svg><use href="#i-close"/></svg></button>
     </div>
     <div id="shop-list"></div>
@@ -162,13 +174,14 @@
   <!-- ローディング -->
   <div id="loader">
     <div class="loader-inner">
+      <span class="loader-mark">R</span>
       <div class="loader-ring"></div>
-      <p>マップを読み込んでいます</p>
+      <p>BKC CAMPUS MAP</p>
     </div>
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260726"></script>
+<script type="module" src="js/app.js?v=20260728b"></script>
 <script>
 // Service Worker（オフラインキャッシュ・再訪時の高速表示）。
 // 対応外・file:// 環境では静かにスキップする。
