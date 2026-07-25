@@ -3,9 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>GFO 北館 バーチャルマップ | GRAND FRONT OSAKA</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%23050b16'/><path d='M22 72V28h56v44M22 50h56M50 28v44' fill='none' stroke='%235de4ff' stroke-width='7'/><circle cx='50' cy='50' r='8' fill='%23f6c76a'/></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260715b">
+<title>立命館大学BKC バーチャルキャンパスマップ | Ritsumeikan BKC</title>
+<meta name="description" content="立命館大学びわこ・くさつキャンパス（BKC）の3Dバーチャルマップ。建物検索・最短経路案内・GPSナビ・ARナビ対応。">
+<meta name="theme-color" content="#0c0a10">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%239d1535'/><text x='50' y='56' font-family='Georgia,serif' font-size='58' font-weight='700' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'>R</text></svg>">
+<link rel="stylesheet" href="css/style.css?v=20260725">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -39,39 +42,34 @@
   <!-- ヘッダー -->
   <header id="topbar">
     <div class="brand">
-      <span class="brand-mark"><span>GFO</span></span>
+      <span class="brand-mark"><span>BKC</span></span>
       <div class="brand-txt">
-        <strong>グランフロント大阪</strong>
-        <small>NORTH B1-2F · DIGITAL TWIN</small>
+        <strong>立命館大学 BKC</strong>
+        <small>BIWAKO-KUSATSU · VIRTUAL CAMPUS</small>
       </div>
     </div>
     <div class="topbar-actions">
-      <button id="btn-list" class="chip-btn" title="スポット一覧"><svg><use href="#i-grid"/></svg><span>スポット</span></button>
+      <button id="btn-list" class="chip-btn" title="施設一覧"><svg><use href="#i-grid"/></svg><span>施設一覧</span></button>
     </div>
   </header>
 
   <button id="quick-destination" type="button">
     <span class="quick-search-icon"><svg><use href="#i-search"/></svg></span>
-    <span><small>EXPLORE NORTH B1-2F</small><strong>どこへ行きますか？</strong></span>
+    <span><small>EXPLORE BKC CAMPUS</small><strong>どこへ行きますか？</strong></span>
     <span class="quick-search-arrow"><svg><use href="#i-chevron-right"/></svg></span>
   </button>
 
   <!-- カテゴリフィルタ -->
   <div id="filters">
     <button class="filter-chip active" data-cat="all">すべて</button>
-    <button class="filter-chip" data-cat="fashion"><i style="background:#c5ca00"></i>ファッション</button>
-    <button class="filter-chip" data-cat="interior"><i style="background:#00979d"></i>インテリア</button>
-    <button class="filter-chip" data-cat="cafe"><i style="background:#e8a800"></i>カフェ・レストラン</button>
-    <button class="filter-chip" data-cat="kc"><i style="background:#e62b67"></i>ナレッジキャピタル</button>
+    <button class="filter-chip" data-cat="lecture"><i style="background:#60a5fa"></i>授業・学び</button>
+    <button class="filter-chip" data-cat="food"><i style="background:#fbbf24"></i>食堂・カフェ</button>
+    <button class="filter-chip" data-cat="admin"><i style="background:#fb7185"></i>窓口・サポート</button>
+    <button class="filter-chip" data-cat="research"><i style="background:#2dd4bf"></i>研究・実験棟</button>
+    <button class="filter-chip" data-cat="sports"><i style="background:#4ade80"></i>スポーツ</button>
+    <button class="filter-chip" data-cat="circle"><i style="background:#f472b6"></i>課外・サークル</button>
+    <button class="filter-chip" data-cat="life"><i style="background:#cbd5e1"></i>生活・施設</button>
   </div>
-
-  <!-- フロア切替 -->
-  <div id="floor-switcher" aria-label="フロア切替">
-    <button class="floor-chip" data-floor="2f" type="button">2F</button>
-    <button class="floor-chip active" data-floor="1f" type="button">1F</button>
-    <button class="floor-chip" data-floor="b1f" type="button">B1</button>
-  </div>
-  <button id="im-here" class="hidden" type="button">📍 この階にいる</button>
 
   <!-- 地図操作 -->
   <div id="map-controls" aria-label="地図操作">
@@ -79,18 +77,18 @@
     <button id="btn-zoom-in" type="button" title="拡大"><svg><use href="#i-plus"/></svg></button>
     <button id="btn-zoom-out" type="button" title="縮小"><svg><use href="#i-minus"/></svg></button>
   </div>
-  <div id="zoom-hint"><span>＋</span> 拡大すると店舗情報を表示</div>
+  <div id="zoom-hint"><span>＋</span> 拡大すると建物情報を表示</div>
 
-  <!-- ショップ一覧ドロワー -->
+  <!-- 施設一覧ドロワー -->
   <aside id="drawer">
     <div class="drawer-head">
-      <input id="search" type="search" placeholder="ショップを検索…">
+      <input id="search" type="search" placeholder="建物・施設を検索（例: 食堂・図書館）">
       <button id="drawer-close" class="icon-btn" aria-label="閉じる"><svg><use href="#i-close"/></svg></button>
     </div>
     <div id="shop-list"></div>
   </aside>
 
-  <!-- ショップ情報カード -->
+  <!-- 施設情報カード -->
   <div id="shop-card" class="hidden">
     <button id="card-close" class="icon-btn" aria-label="閉じる"><svg><use href="#i-close"/></svg></button>
     <div class="card-logo"><img id="card-logo-img" alt=""></div>
@@ -101,7 +99,7 @@
       <p id="card-desc"></p>
       <div class="card-actions">
         <button id="card-goto" class="primary-btn"><svg><use href="#i-route"/></svg>ルートを開く</button>
-        <a id="card-link" href="#" target="_blank" rel="noopener" class="ghost-btn">公式ページ <svg><use href="#i-external"/></svg></a>
+        <a id="card-link" href="#" target="_blank" rel="noopener" class="ghost-btn">公式サイト <svg><use href="#i-external"/></svg></a>
       </div>
     </div>
   </div>
@@ -139,10 +137,10 @@
     </div>
   </div>
 
-  <!-- 乗換カード（フロア移動の指示） -->
+  <!-- 乗換カード（屋外単一マップのため通常は使われないが、ナビ機構の一部として保持） -->
   <div id="transfer-card" class="hidden">
     <div class="transfer-inner">
-      <div class="transfer-icon">🛗</div>
+      <div class="transfer-icon">🚶</div>
       <div id="transfer-text"></div>
       <button id="transfer-done" class="primary-btn" type="button">着いた</button>
     </div>
@@ -175,26 +173,35 @@
   <div id="loader">
     <div class="loader-inner">
       <div class="loader-ring"></div>
-      <p>バーチャルマップを構築中…</p>
+      <p>バーチャルキャンパスを構築中…</p>
     </div>
   </div>
 
-  <!-- 現在階の選択（起動時） -->
+  <!-- 出発地点の選択（起動時） -->
   <div id="floor-picker" class="hidden">
     <div class="floor-picker-inner">
-      <div class="floor-picker-brand"><span class="brand-mark"><span>GFO</span></span></div>
-      <h2>いま何階にいますか？</h2>
-      <p class="floor-picker-sub">現在地の階を選んでください<br><small>フロア案内の出発地点になります</small></p>
+      <div class="floor-picker-brand"><span class="brand-mark"><span>BKC</span></span></div>
+      <h2>いまどこにいますか？</h2>
+      <p class="floor-picker-sub">現在地に近い場所を選んでください<br><small>キャンパス案内の出発地点になります</small></p>
       <div class="floor-picker-list">
-        <button class="floor-picker-btn" data-floor="2f" type="button"><b>2F</b><span>ファッション・雑貨・ナレッジキャピタル</span></button>
-        <button class="floor-picker-btn" data-floor="1f" type="button"><b>1F</b><span>ファッション・カフェ・The&nbsp;Lab.</span></button>
-        <button class="floor-picker-btn" data-floor="b1f" type="button"><b>B1</b><span>レストラン・サービス・イベント</span></button>
+        <button class="floor-picker-btn" data-start="gate-main" type="button"><b>正門</b><span>フロンティアアベニュー側のメインゲート</span></button>
+        <button class="floor-picker-btn" data-start="bus" type="button"><b>バス</b><span>バスターミナル（セントラルサーカス前）</span></button>
+        <button class="floor-picker-btn" data-start="gate-east" type="button"><b>東門</b><span>駐輪場・バイク置場側のゲート</span></button>
       </div>
-      <button id="floor-picker-skip" type="button">わからない（1Fから案内）</button>
+      <button id="floor-picker-skip" type="button">わからない（正門から案内）</button>
     </div>
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260715b"></script>
+<script type="module" src="js/app.js?v=20260725"></script>
+<script>
+// Service Worker（オフラインキャッシュ・再訪時の高速表示）。
+// 対応外・file:// 環境では静かにスキップする。
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => { /* 登録失敗でもアプリは動作する */ });
+  });
+}
+</script>
 </body>
 </html>

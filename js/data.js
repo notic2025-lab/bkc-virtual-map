@@ -1,35 +1,34 @@
 // ============================================================
-// GRAND FRONT OSAKA 北館 B1F/1F/2F — マップデータ
-// 出典: https://www.gfo-sc.jp/information/floor/north/
-// 座標系: フロアマップ画像(1230x930)上の percent (left, top)
-//   店舗ピンは公式サイト埋め込みデータの座標をそのまま使用
+// 立命館大学 びわこ・くさつキャンパス (BKC) — バーチャルマップデータ
+// 出典: 立命館大学 BKCキャンパスマップ（公式パンフレット 2026-07時点）
+// 座標系: キャンパス略図上の percent (left: 0-100, top: 0-100)
+//   ※ 公式イラストマップを元にしたデフォルメ略図。位置関係は概略。
 // ============================================================
 
-export const MAP_W = 123;   // ワールド幅 (x)
-export const MAP_D = 70;    // 公式図のフロア部分（元画像の上700px）
-const FLOOR_CROP_TOP_PERCENT = 700 / 930 * 100;
+export const MAP_W = 170;   // ワールド幅 (x) … 1単位 ≈ 4m → 約680m
+export const MAP_D = 110;   // ワールド奥行 (z) … 約440m
 
 // percent座標 → ワールド座標
 export function toWorld(left, top) {
   return {
     x: (left - 50) / 100 * MAP_W,
-    z: (top / FLOOR_CROP_TOP_PERCENT - 0.5) * MAP_D,
+    z: (top - 50) / 100 * MAP_D,
   };
 }
 
-// ---- GPSジオリファレンス（実座標 ⇔ フロアマップ座標）----
-// lat0/lng0 = マップ中心 (world 0,0) の実座標。rotationDeg = フロアマップ上方向の方位
-// （真北から時計回り）。値は地図からの推定のため、現地でズレがあればここを調整する。
+// ---- GPSジオリファレンス（実座標 ⇔ マップ座標）----
+// lat0/lng0 = マップ中心 (world 0,0) の実座標。rotationDeg = マップ上方向の方位
+// （真北から時計回り）。略図のため推定値。現地でズレがあればここを調整する。
 export const GEO = {
-  lat0: 34.7058,
-  lng0: 135.4954,
-  rotationDeg: 0,
-  meterPerUnit: 1.6,
+  lat0: 34.9823,
+  lng0: 135.9633,
+  rotationDeg: 35,     // 略図の「上」の実方位（推定・要現地校正）
+  meterPerUnit: 4,
 };
 
 export function gpsToWorld(lat, lng) {
   const rad = Math.PI / 180;
-  const dN = (lat - GEO.lat0) * 111320;                          // 北方向 (m)
+  const dN = (lat - GEO.lat0) * 111320;                            // 北方向 (m)
   const dE = (lng - GEO.lng0) * 111320 * Math.cos(GEO.lat0 * rad); // 東方向 (m)
   const th = GEO.rotationDeg * rad;
   return {
@@ -38,501 +37,521 @@ export function gpsToWorld(lat, lng) {
   };
 }
 
+// 大学生活の目的から探せるカテゴリ
 export const CATEGORIES = {
-  fashion:  { label: 'ファッション',        color: 0xc5ca00, css: '#c5ca00' },
-  interior: { label: 'インテリア・雑貨',    color: 0x00979d, css: '#00979d' },
-  cafe:     { label: 'レストラン・カフェ',  color: 0xffc93c, css: '#e8a800' },
-  kc:       { label: 'ナレッジキャピタル',  color: 0xe62b67, css: '#e62b67' },
-  service:  { label: 'サービス・ビューティ', color: 0x57858f, css: '#6da3b0' },
+  lecture:  { label: '授業・学び',      color: 0x3b82f6, css: '#60a5fa' },
+  food:     { label: '食堂・カフェ',    color: 0xf59e0b, css: '#fbbf24' },
+  research: { label: '研究・実験棟',    color: 0x14b8a6, css: '#2dd4bf' },
+  admin:    { label: '窓口・サポート',  color: 0xf43f5e, css: '#fb7185' },
+  sports:   { label: 'スポーツ',        color: 0x22c55e, css: '#4ade80' },
+  circle:   { label: '課外・サークル',  color: 0xec4899, css: '#f472b6' },
+  life:     { label: '生活・施設',      color: 0x94a3b8, css: '#cbd5e1' },
 };
 
 // ============================================================
-// フロア定義（縦に積層して表示。y はワールド高さ）
+// マップ定義（BKCは屋外キャンパス＝単一マップ）
+//   navNodes/navEdges = 通路ネットワーク（A*経路探索用）
 // ============================================================
-export const FLOOR_ORDER = ['b1f', '1f', '2f'];
+export const FLOOR_ORDER = ['campus'];
 
 export const FLOORS = {
-  b1f: {
-    id: 'b1f', label: '北館 B1F', short: 'B1', y: -16,
-    map: 'assets/northb1f-floor-1024.jpg',
-    // 通路ナビゲーショングラフ（B1F: 西ブロック回廊＋中央広場＋北3方面）
+  campus: {
+    id: 'campus', label: 'BKCキャンパス', short: 'BKC', y: 0,
     navNodes: {
-      A1: { left: 13, top: 20 }, A2: { left: 21, top: 20 }, A3: { left: 28, top: 20 }, A4: { left: 35, top: 20 },
-      B0: { left: 11, top: 28 },
-      B1: { left: 13, top: 31 }, B2: { left: 20, top: 31 }, B3: { left: 27, top: 31 }, B4: { left: 32, top: 31 }, B5: { left: 37, top: 29 },
-      C1: { left: 20, top: 37 }, C2: { left: 27, top: 43 }, C3: { left: 25, top: 50 },
-      D1: { left: 44, top: 33 }, D2: { left: 42, top: 43 }, D3: { left: 51, top: 47 },
-      E1: { left: 45, top: 25 }, E2: { left: 52, top: 20 }, E3: { left: 60, top: 14 },
-      T1: { left: 34, top: 13 }, T4: { left: 6, top: 34 },
+      // 正門〜キャンパスプロムナード（南北のメインストリート）
+      GM:  { left: 52, top: 92 },  // 正門
+      PM1: { left: 52, top: 83 },
+      BT:  { left: 52, top: 75 },  // バスターミナル前
+      CS:  { left: 52, top: 68 },  // セントラルサーカス
+      PM2: { left: 52, top: 60 },
+      PM3: { left: 52, top: 52 },
+      PM4: { left: 52, top: 44 },
+      PM5: { left: 52, top: 36 },
+      PM6: { left: 52, top: 28 },
+      PM7: { left: 52, top: 20 },
+      PM8: { left: 52, top: 14 },
+      // 南東（スタジアム・アクロス方面）
+      SE1: { left: 60, top: 66 },
+      SE2: { left: 66, top: 70 },
+      ST:  { left: 73, top: 77 },  // スタジアム前
+      GFD: { left: 90, top: 77 },  // グリーンフィールド
+      AC1: { left: 60, top: 60 },  // アクロス前
+      EP1: { left: 67, top: 62 },  // エポック前
+      // 南西 ビュートストリート 〜 東門
+      SW1: { left: 44, top: 68 },
+      SW2: { left: 36, top: 66 },
+      SW3: { left: 28, top: 66 },
+      SW4: { left: 20, top: 67 },
+      SW5: { left: 13, top: 70 },
+      EG1: { left: 10, top: 78 },
+      EG:  { left: 10, top: 86 },  // 東門
+      // 南西の研究ゾーン
+      R1:  { left: 30, top: 74 },
+      R2:  { left: 22, top: 74 },
+      R3:  { left: 38, top: 80 },
+      // 西（BKCジム・アクト）
+      ACT: { left: 26, top: 63 },
+      W1:  { left: 24, top: 60 },
+      W2:  { left: 16, top: 58 },  // ジム前
+      // 中央
+      C1:  { left: 44, top: 62 },  // セントラルアーク前
+      U1:  { left: 38, top: 58 },  // ユニオン前
+      F1:  { left: 42, top: 53 },  // フォレスト前
+      PR:  { left: 48, top: 54 },  // プリズム前
+      CO:  { left: 56, top: 50 },  // コアステーション前
+      CB:  { left: 60, top: 47 },  // シー・キューブ前
+      M1:  { left: 44, top: 45 },  // メディアセンター前
+      WS:  { left: 32, top: 46 },  // ワークショップラボ前
+      CL1: { left: 38, top: 43 },  // コラーニングI前
+      CL2: { left: 41, top: 37 },  // コラーニングII前
+      L1:  { left: 50, top: 38 },  // リンクスクエア前
+      // 北（研究エリア）
+      N1:  { left: 44, top: 28 },
+      N2:  { left: 36, top: 29 },
+      N3:  { left: 28, top: 23 },
+      N4:  { left: 36, top: 19 },
+      N5:  { left: 46, top: 17 },
+      N6:  { left: 56, top: 15 },
+      N7:  { left: 62, top: 15 },
+      NE1: { left: 58, top: 25 },
+      NE2: { left: 62, top: 29 },
+      NE3: { left: 68, top: 26 },
+      NE4: { left: 70, top: 34 },
+      // 東（スポーツ健康コモンズ・インターナショナルハウス方面）
+      E1:  { left: 70, top: 46 },
+      GR:  { left: 73, top: 37 },
+      XV:  { left: 74, top: 24 },
+      SPC: { left: 79, top: 16 },
+      IH:  { left: 85, top: 40 },
+      TN:  { left: 66, top: 9 },
+      G1:  { left: 86, top: 12 },
     },
     navEdges: [
-      ['A1','A2'], ['A2','A3'], ['A3','A4'], ['A4','T1'],
-      ['A1','B1'], ['A2','B2'], ['A3','B3'], ['A4','B5'],
-      ['B0','B1'], ['T4','B0'],
-      ['B1','B2'], ['B2','B3'], ['B3','B4'], ['B4','B5'],
-      ['B2','C1'], ['C1','C2'], ['C2','C3'],
-      ['B5','D1'], ['D1','D2'], ['D2','D3'], ['C2','D2'],
-      ['D1','E1'], ['E1','E2'], ['E2','E3'],
-    ],
-  },
-  '1f': {
-    id: '1f', label: '北館 1F', short: '1F', y: 0,
-    map: 'assets/north1f-floor-1024.jpg',
-    // 「創造のみち」＋ナレッジプラザ＋南北連絡通路をモデル化
-    navNodes: {
-      W0: { left: 8,  top: 34 },   // 北4前
-      W1: { left: 12, top: 34 },
-      W2: { left: 19, top: 34.5 },
-      W3: { left: 26, top: 36 },
-      W4: { left: 33, top: 35 },
-      W5: { left: 40, top: 34 },
-      N0: { left: 9,  top: 24 },   // 南館連絡口付近
-      N1: { left: 16, top: 26 },
-      N2: { left: 23, top: 26 },
-      N3: { left: 30, top: 29 },
-      N4: { left: 34, top: 22 },   // 北1下
-      T1: { left: 34, top: 13 },   // 北1
-      P1: { left: 46, top: 34 },   // プラザ西
-      P2: { left: 52, top: 29 },   // プラザ北
-      P3: { left: 52, top: 40 },   // プラザ中央
-      P4: { left: 58, top: 31 },   // The Lab.前
-      P5: { left: 50, top: 46 },   // プラザ南
-      U1: { left: 65, top: 20 },   // 北3下
-      T3: { left: 65, top: 12 },   // 北3
-      E1: { left: 64, top: 33 },   // 東 創造のみち
-      E2: { left: 70, top: 33 },
-      E3: { left: 76, top: 32 },
-      E4: { left: 82, top: 31 },
-      E5: { left: 87, top: 29 },   // SOHOLM前
-      S1: { left: 46, top: 53 },   // 南通路
-      S2: { left: 40, top: 59 },   // 北2前
-      SW1: { left: 20, top: 43 },  // 南西通路
-      SW2: { left: 20, top: 50 },
-      SW3: { left: 22, top: 55 },
-    },
-    navEdges: [
-      ['W0','W1'], ['W1','W2'], ['W2','W3'], ['W3','W4'], ['W4','W5'], ['W5','P1'],
-      ['N0','N1'], ['N1','N2'], ['N2','N3'], ['N3','N4'], ['N4','T1'],
-      ['N1','W2'], ['N2','W3'], ['N3','W4'], ['N4','W5'],
-      ['P1','P2'], ['P1','P3'], ['P2','P4'], ['P3','P4'], ['P3','P5'], ['P2','P3'],
-      ['P4','U1'], ['U1','T3'], ['P4','E1'],
-      ['E1','E2'], ['E2','E3'], ['E3','E4'], ['E4','E5'],
-      ['P5','S1'], ['S1','S2'],
-      ['W2','SW1'], ['SW1','SW2'], ['SW2','SW3'],
-      ['P5','P1'],
-    ],
-  },
-  '2f': {
-    id: '2f', label: '北館 2F', short: '2F', y: 16,
-    map: 'assets/north2f-floor-1024.jpg',
-    // 創造のみち(2F)＋吹き抜け回廊＋北接続ブリッジ方面
-    navNodes: {
-      SK: { left: 3,  top: 40 },   // 南館連絡デッキ
-      K1: { left: 8,  top: 40 }, K2: { left: 16, top: 40 }, K3: { left: 21, top: 40 },
-      K4: { left: 27, top: 40 }, K5: { left: 33, top: 40 }, K6: { left: 39, top: 40 }, K7: { left: 44, top: 41 },
-      L1: { left: 50, top: 41 }, L2: { left: 57, top: 42 }, L3: { left: 64, top: 41 },
-      L4: { left: 67, top: 37 }, L5: { left: 71, top: 31 }, L6: { left: 76, top: 28 },
-      L7: { left: 84, top: 28 }, L8: { left: 90, top: 28 },
-      Z2: { left: 42, top: 34 }, Z1: { left: 42, top: 27 }, Z0: { left: 41, top: 21 },
-      T1: { left: 38, top: 19 },   // 北1
-      P1: { left: 51, top: 33 }, P2: { left: 52, top: 26 }, A1: { left: 60, top: 25 },
-      Q1: { left: 64, top: 36 }, Q2: { left: 63, top: 30 },
-      S0: { left: 16, top: 43 },
-      B2: { left: 44, top: 47 },   // 北2
-      N4: { left: 12, top: 34 },   // 北4
-      T3: { left: 71, top: 18 },   // 北3
-    },
-    navEdges: [
-      ['SK','K1'], ['K1','K2'], ['K2','K3'], ['K3','K4'], ['K4','K5'], ['K5','K6'], ['K6','K7'],
-      ['K7','L1'], ['L1','L2'], ['L2','L3'], ['L3','L4'], ['L4','L5'], ['L5','L6'], ['L6','L7'], ['L7','L8'],
-      ['K6','Z2'], ['Z2','Z1'], ['Z1','Z0'], ['Z0','T1'],
-      ['L1','P1'], ['P1','P2'], ['P2','A1'], ['A1','Q2'],
-      ['L3','Q1'], ['Q1','Q2'],
-      ['K2','N4'], ['K2','S0'], ['K7','B2'], ['L5','T3'],
+      // プロムナード
+      ['GM','PM1'], ['PM1','BT'], ['BT','CS'], ['CS','PM2'], ['PM2','PM3'], ['PM3','PM4'],
+      ['PM4','PM5'], ['PM5','PM6'], ['PM6','PM7'], ['PM7','PM8'],
+      // 南東
+      ['CS','SE1'], ['SE1','SE2'], ['SE2','ST'], ['ST','GFD'],
+      ['PM2','AC1'], ['AC1','SE1'], ['AC1','EP1'], ['EP1','SE2'],
+      // 南西〜東門
+      ['CS','SW1'], ['SW1','SW2'], ['SW2','SW3'], ['SW3','SW4'], ['SW4','SW5'],
+      ['SW5','EG1'], ['EG1','EG'],
+      // 南西研究ゾーン
+      ['SW5','R2'], ['R2','R1'], ['R1','R3'], ['R3','PM1'],
+      // 西
+      ['SW3','ACT'], ['ACT','W1'], ['W1','W2'], ['W2','SW5'], ['W1','U1'],
+      // 中央
+      ['SW1','C1'], ['C1','PM2'], ['C1','U1'],
+      ['U1','F1'], ['F1','PR'], ['PR','PM3'],
+      ['PM3','CO'], ['CO','CB'], ['CB','AC1'], ['CB','E1'],
+      ['F1','M1'], ['M1','PM4'], ['M1','CL1'], ['CL1','WS'], ['CL1','CL2'],
+      ['CL2','L1'], ['PM5','L1'], ['CL2','N2'],
+      // 北
+      ['PM6','N1'], ['N1','N2'], ['N2','N3'], ['N3','N4'], ['N4','N5'],
+      ['N5','N6'], ['N6','N7'], ['N5','PM7'],
+      ['PM6','NE1'], ['NE1','NE2'], ['NE1','NE3'], ['NE3','XV'],
+      ['NE2','NE4'], ['NE4','GR'], ['GR','E1'], ['GR','XV'],
+      ['XV','SPC'], ['SPC','G1'], ['N7','TN'], ['TN','SPC'],
+      ['E1','IH'],
     ],
   },
 };
 
-// フロア間の縦動線（エレベーター・エスカレーター）。A*グラフをここで接続する
-export const FLOOR_LINKS = [
-  { name: '北1エレベーター', nodes: { b1f: 'T1', '1f': 'T1', '2f': 'T1' } },
-  { name: '北2エレベーター', nodes: { b1f: 'D2', '1f': 'S2', '2f': 'B2' } },
-  { name: '北3エレベーター', nodes: { b1f: 'E3', '1f': 'T3', '2f': 'T3' } },
-  { name: '北4エレベーター', nodes: { b1f: 'T4', '1f': 'W0', '2f': 'N4' } },
-  { name: 'エスカレーター（西）', nodes: { b1f: 'B1', '1f': 'W2' } },
-  { name: 'エスカレーター（創造のみち）', nodes: { '1f': 'P4', '2f': 'P2' } },
+// フロア間リンク（BKCは屋外単一マップのため無し）
+export const FLOOR_LINKS = [];
+
+// ---- 池・グラウンドなど地面に描く要素 ----
+export const WATERS = [
+  { name: '八左衛門池', left: 24, top: 53, rx: 5.0, ry: 3.4 },
+  { name: '自然池',     left: 29, top: 36, rx: 3.4, ry: 2.6 },
+  { name: '調整池',     left: 17, top: 45, rx: 2.6, ry: 2.0 },
+];
+export const FIELDS = [
+  { kind: 'track',  left: 75, top: 83, w: 20, h: 12 },  // クインススタジアム
+  { kind: 'dirt',   left: 87, top: 11, w: 13, h: 8 },   // 第一グラウンド
+  { kind: 'dirt',   left: 8,  top: 80, w: 9,  h: 6 },   // 第三グラウンド
+  { kind: 'tennis', left: 66, top: 6,  w: 10, h: 5 },   // テニスコート
+  { kind: 'turf',   left: 91, top: 77, w: 9,  h: 6 },   // BKCグリーンフィールド
+  { kind: 'plot',   left: 48, top: 8,  w: 7,  h: 4 },   // 薬草園
 ];
 
 // ============================================================
-// ショップ（全フロア横断。floor / entry(最寄り通路ノード) 付き）
+// 建物・施設（no = 公式マップの番号 / entry = 最寄り通路ノード）
 // ============================================================
 export const SHOPS = [
-  // ---------------- 1F ----------------
+  // ---------- 授業・学び ----------
   {
-    id: 'noom', floor: '1f', entry: 'W1', name: 'イタリアン&カフェバー NOOM', en: 'Italian and Cafebar NOOM',
-    tag: 'イタリアン・フレンチ・洋食', cat: 'cafe',
-    pin: { left: 13.6, top: 30.2 }, size: { w: 7, d: 7, h: 5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/noom/',
-    logo: 'https://www.gfo-sc.jp/files/20250731/0f05bc375c7accfcd76979dd8b39321f95cc55d3.jpg',
-    desc: 'ミシュランシェフ監修のもと、素材の持ち味を活かした本格イタリアンを、日常の中で気軽に楽しめるNOOM。ランチやディナーはもちろん、自家製スイーツや厳選ワインを楽しむカフェバー利用もおすすめ。ランチからバータイムまで、多彩なシーンに寄り添う都会のレストランです。',
+    id: 'prism', no: 28, entry: 'PR', name: 'プリズムハウス', en: 'PRISM HOUSE',
+    tag: '教室・キャリアセンター', cat: 'lecture',
+    pin: { left: 48, top: 56 }, size: { w: 11, d: 9, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'プリズムホール、情報語学演習室、情報処理演習室、教室、キャリアセンター、マルチメディアルームなど。1・2回生の授業が多く行われるBKCの代表的な講義棟。就活相談はここのキャリアセンターへ。',
   },
   {
-    id: 'pelle-morbida', floor: '1f', entry: 'W2', name: 'PELLE MORBIDA', en: 'PELLE MORBIDA',
-    tag: 'バッグ・革小物', cat: 'fashion',
-    pin: { left: 20.1, top: 29.6 }, size: { w: 5, d: 5, h: 4.2 },
-    url: 'https://www.gfo-sc.jp/shop-detail/PELLEMORBIDA/',
-    logo: 'https://www.gfo-sc.jp/files/20220831/9c83f64eea9dcbfc744ec1d62e02b09649cbd504.jpg',
-    desc: '"旅の理想形"として知られる船旅を楽しむ大人たちに向けて誕生したバッグブランド。その名は「柔らかな肌（革）」を意味するイタリア語から。優雅な船旅に持って行きたくなるような、上品で良質なアイテムを製作しています。流行は追わず、現代感覚をバランスよく取り入れたグローバルスタンダードを目指し、耐久性や機能性も兼備。',
+    id: 'forest', no: 27, entry: 'F1', name: 'フォレストハウス', en: 'FOREST HOUSE',
+    tag: '教室棟', cat: 'lecture',
+    pin: { left: 40, top: 52 }, size: { w: 9, d: 7, h: 5 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '教室が集まる講義棟。プリズムハウスと並ぶ授業の中心地。テスト期間は自習する学生でにぎわいます。',
   },
   {
-    id: 'starbucks', floor: '1f', entry: 'N1', name: 'STARBUCKS', en: 'STARBUCKS TEAVANA',
-    tag: 'カフェ', cat: 'cafe',
-    pin: { left: 18.6, top: 21.0 }, size: { w: 8, d: 5, h: 4.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/STARBUCKS_kitakanten/',
-    logo: 'https://www.gfo-sc.jp/files/20220720/e50a5bc33c426dea35ad1a465d99235104e50c77.png',
-    desc: '彩りあふれる、心あたたまるティーのひとときを。鮮やかで香り豊かなティービバレッジに特化したスターバックス。上質な茶葉とボタニカルな素材を選び抜いたティーブランド TEAVANA™ の多彩なティービバレッジをご用意。洗練された空間の中で、香り豊かなティー体験をお届けします。',
+    id: 'across', no: 5, entry: 'AC1', name: 'アクロスウイング', en: 'ACROSS WING',
+    tag: '演習室・ぴあら・研究室', cat: 'lecture',
+    pin: { left: 63, top: 58 }, size: { w: 12, d: 8, h: 7 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'アクロスラウンジ、情報語学演習室、メディアライブラリー、RAINBOW HIROBA、RAINBOWサービスデスク、ぴあら、教員研究室、BKCリサーチオフィス、教職支援センターなど。PCや情報環境のトラブルはRAINBOWサービスデスクへ。',
   },
   {
-    id: 'global-style', floor: '1f', entry: 'N3', name: 'GINZA Global Style', en: 'GINZA Global Style',
-    tag: 'オーダースーツ', cat: 'fashion',
-    pin: { left: 28.2, top: 24.2 }, size: { w: 7, d: 9, h: 4.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/GINZAGlobalStyle/',
-    logo: 'https://www.gfo-sc.jp/files/20220221/3d8f6cf30a0986d44f65c6454a5d1c3b8c8b0be6.jpg',
-    desc: '「ENJOY ORDER！」をコンセプトに、"あなただけ"のスーツを提案する本格オーダースーツ専門店。1着2万円台から、業界最多の約5,000種類の生地と豊富なスーツモデルをご用意。シャツやシューズのオーダーも可能。レディースコーナーとプライベートフィッティングルームも設置。',
+    id: 'colearn1', no: 19, entry: 'CL1', name: 'コラーニングハウスⅠ', en: 'CO-LEARNING HOUSE I',
+    tag: '情報処理演習室・教室', cat: 'lecture',
+    pin: { left: 36, top: 42 }, size: { w: 9, d: 6, h: 5 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '情報処理演習室、情報語学演習室、教室。通称「コラI」。',
   },
   {
-    id: 'the-lab', floor: '1f', entry: 'P4', name: 'The Lab.（CAFE Lab.）', en: 'Communication Cafe',
-    tag: 'コミュニケーションカフェ', cat: 'kc',
-    pin: { left: 57.4, top: 25.1 }, size: { w: 13, d: 9, h: 6 },
-    url: 'https://kc-i.jp/facilities/the-lab/cafe-lab/',
-    logo: 'https://www.gfo-sc.jp/files/20180913/35ff76fdd956c47afd5ce02c38f209dec0ff844c.png',
-    desc: 'ナレッジキャピタルの交流拠点「The Lab.」内のコミュニケーションカフェ。本を片手にコーヒーを楽しんだり、最先端の技術・研究の展示に触れながら、人と人との出会い・交流が生まれる場所。誰でも気軽に立ち寄れる知的好奇心を刺激する空間です。',
+    id: 'colearn2', no: 20, entry: 'CL2', name: 'コラーニングハウスⅡ', en: 'CO-LEARNING HOUSE II',
+    tag: '実習室・教室', cat: 'lecture',
+    pin: { left: 40, top: 35 }, size: { w: 9, d: 6, h: 5 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '食マネジメント学部の実習室、薬学部の研究実験室、教室など。通称「コラII」。',
   },
   {
-    id: 'ring-jacket', floor: '1f', entry: 'W2', name: 'RING JACKET', en: 'RING JACKET',
-    tag: 'メンズ', cat: 'fashion',
-    pin: { left: 19.4, top: 39.4 }, size: { w: 5, d: 4.5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/ring-jacket/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/fe762361460312b69ff7d1bbdb27b6a6417883f4.png',
-    desc: '1954年創業、日本を代表するドレスクロージングブランド。世界的にも注目されるクオリティーと希少性あふれるコレクションはまさに「グローバルスタンダード」。自社一貫生産のドレスクロージングに加え、トレンドを捉えたインポートアイテムや、特別な空間でご案内する「オーダーサービス」も真骨頂。',
+    id: 'epoch', no: 13, entry: 'EP1', name: 'エポック立命21', en: 'EPOCH RITSUMEI 21',
+    tag: 'セミナーハウス', cat: 'lecture',
+    pin: { left: 69, top: 64 }, size: { w: 8, d: 6, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '多機能型セミナーハウス。ゼミ合宿や研修、各種イベントに使われる宿泊機能つきの施設。',
   },
   {
-    id: 'g-shock', floor: '1f', entry: 'W4', name: 'G-SHOCK STORE', en: 'G-SHOCK STORE OSAKA',
-    tag: '腕時計', cat: 'fashion',
-    pin: { left: 29.5, top: 39.6 }, size: { w: 5.5, d: 4.5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/g-shock-store/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/ee4c517b3ba2c7e2297d7a16e239266e1d71fcc7.png',
-    desc: '直営店最大の売場面積を誇るG-SHOCK STORE OSAKA！広々とした店内には最新・人気モデルを常時300モデル以上ラインアップ。専門技師が常駐するメンテナンスブースも併設し、アフターサービスも万全。修理のご相談もお気軽にどうぞ！',
-  },
-  {
-    id: 'tsuchiya-kaban', floor: '1f', entry: 'W3', name: 'TSUCHIYA KABAN', en: 'Tsuchiya Kaban',
-    tag: 'バッグ・革小物', cat: 'fashion',
-    pin: { left: 23.7, top: 39.8 }, size: { w: 5, d: 4.5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/tsuchiya-kaban/',
-    logo: 'https://www.gfo-sc.jp/files/20230617/b41ae7609d9a6cbeb828d3e6929b949482a3e3dd.jpeg',
-    desc: '1965年の創業以来、日本の職人による、つくり手の見えるものづくりを心掛ける「土屋鞄製造所」。10年以上愛される定番から季節の限定品まで、良質な革素材を生かした鞄アイテムをご用意。店内へ一歩足を踏み入れると、本革ならではの豊かな香りに包まれます。',
-  },
-  {
-    id: 'yondoshi', floor: '1f', entry: 'W4', name: '4℃ SHOWCASE', en: '4℃ SHOWCASE',
-    tag: 'ジュエリー', cat: 'fashion',
-    pin: { left: 36.5, top: 37.8 }, size: { w: 4.5, d: 4.5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/4-bridal/',
-    logo: 'https://www.gfo-sc.jp/files/20250705/b067b29f809c9b47435bcdfc240f9f83ba6bbab0.jpg',
-    desc: '★2025年7月リニューアルオープン★ ショーケース越しに眺めるだけでなく、まるでご自身の部屋でくつろぐようにゆったりとした気持ちでジュエリーをご試着いただける空間。心惹かれる"運命のジュエリー"との出会いを、より深くパーソナルな体験としてお楽しみいただけます。',
-  },
-  {
-    id: 'zara-home', floor: '1f', entry: 'SW2', name: 'ZARA HOME', en: 'ZARA HOME',
-    tag: 'インテリア・生活雑貨', cat: 'interior',
-    pin: { left: 16.7, top: 50.9 }, size: { w: 10, d: 8, h: 5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/zara-home/',
-    logo: 'https://www.gfo-sc.jp/files/20230724/8f9f98e7ab300042bbd31012b062d4d4d8171f03.jpg',
-    desc: 'スペイン発のインテリアファッションブランド。ベッドリネン、テーブルウェア、キッチンアイテム、ルームウェア、ディフューザー、キッズ&ベビーまでバリエーション豊かなインテリア雑貨を展開。週2回新作を投入しながらインテリアの最新トレンドをお届けします。',
-  },
-  {
-    id: 'il-ghiottone', floor: '1f', entry: 'SW3', name: "IL GHIOTTONE di piu'", en: "IL GHIOTTONE di piu'",
-    tag: 'イタリア料理', cat: 'cafe',
-    pin: { left: 22.7, top: 58.9 }, size: { w: 7, d: 5.5, h: 4.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/il-ghiottone/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/2756ae4c771f2070ec251d53194b6f1cde1771ba.png',
-    desc: '全国各地の生産者から届く新鮮な素材を、京料理のエッセンスを取り入れた新しい切り口で楽しむ『イノベーティブ・イタリアン』。春夏秋冬、四季折々の日本の素晴らしさを感じられるお料理をお楽しみください。',
-  },
-  {
-    id: 'tullys', floor: '1f', entry: 'P5', name: "TULLY'S COFFEE", en: "TULLY'S COFFEE",
-    tag: 'コーヒー', cat: 'cafe',
-    pin: { left: 53.4, top: 50.5 }, size: { w: 7, d: 5.5, h: 4.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/tullys/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/067b16b256779af8ecac49e21ceb3899bafe9ff8.png',
-    desc: 'シンボル空間ナレッジプラザの一角に位置するスペシャリティーコーヒーショップ。一杯一杯手作りの本格コーヒーとエスプレッソドリンク。店内はNYの図書館がコンセプトで、たくさんの本とコーヒーの香りに包まれた空間。テラス席では巨大な吹き抜けを見上げながら開放感あふれる時間を。',
-  },
-  {
-    id: 'soholm', floor: '1f', entry: 'E5', name: 'SOHOLM CAFE+DINING', en: 'SOHOLM CAFE+DINING',
-    tag: 'カフェ', cat: 'cafe',
-    pin: { left: 83.8, top: 26.2 }, size: { w: 8, d: 6, h: 4.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/soholm/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/75192de7f83dc9f53ec56320a77e8631b304d2c1.png',
-    desc: 'スーホルムとはデンマーク語で「湖のほとりの小さな町」。太陽のふりそそぐ開放的な空間で、ゆっくりと流れる時間を。テラス席は木々の緑や水の流れを感じる季節ごとの風景が人気。名物ミートボールやミール系パンケーキ、丁寧に焼き上げたワッフルもおすすめ。ディナーは集まりからウェディングまで。',
-  },
-  {
-    id: 'actus', floor: '1f', entry: 'E3', name: 'ACTUS', en: 'ACTUS',
-    tag: 'インテリア・生活雑貨', cat: 'interior',
-    pin: { left: 74.3, top: 28.8 }, size: { w: 11, d: 7, h: 5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/actus/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/5cc8a9037da8196220d575df671db8fbaa202c33.png',
-    desc: '本格カフェダイニングを併設し、オリジナル家具、食卓を楽しくするグロッサリー、体験型ボディケアからアパレルまで。衣食住を網羅する関西初のライフスタイル発信型セレクトショップ。北欧・ナチュラル・モダンと様々なスタイルで編集した店内を回遊しながら、暮らしのヒントを見つけて。',
+    id: 'creation', no: 17, entry: 'N5', name: 'クリエーションコア', en: 'CREATION CORE',
+    tag: '教室棟', cat: 'lecture',
+    pin: { left: 46, top: 15 }, size: { w: 9, d: 7, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '講義・演習に使われる教室棟。北側の研究エリアに隣接しています。',
   },
 
-  // ---------------- B1F ----------------
+  // ---------- 図書・学習 ----------
   {
-    id: 'lables-one', floor: 'b1f', entry: 'B5', name: 'LaBless ONE / LaLaBless', en: 'LaBless ONE / LaLa Bless',
-    tag: 'ヘアサロン・アイサロン', cat: 'service',
-    pin: { left: 35.7, top: 31.3 }, size: { w: 5, d: 4, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/LaBlessONE/',
-    logo: 'https://www.gfo-sc.jp/files/20260401/71f1addefd2fae953b591e43a6dd3a3dfb5ae2ab.png',
-    desc: 'ヘア＆アイの最高峰！大人のための美の拠点、LaBless ONE ＆ LaLa Bless。南館で圧倒的支持を得るヘアサロンとアイサロンが北館B1Fに。',
-  },
-  {
-    id: 'jackson-garden', floor: 'b1f', entry: 'C1', name: 'THE JACKSON GARDEN BRIDAL SALON', en: 'THE JACKSON GARDEN',
-    tag: 'ブライダルサロン', cat: 'service',
-    pin: { left: 19.3, top: 36.5 }, size: { w: 6, d: 5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/THE_JACKSON_GARDEN/',
-    logo: 'https://www.gfo-sc.jp/files/20231121/17896b07364219562f6181d7d064b2cc96317eb2.jpg',
-    desc: 'グラングリーン大阪のパーティーレストラン「THE JACKSON GARDEN」専門のブライダルサロン。ウェディングの相談はこちらで。',
-  },
-  {
-    id: 'icure', floor: 'b1f', entry: 'B3', name: 'iCure鍼灸接骨院', en: 'iCure Acupuncture Clinic',
-    tag: '鍼灸接骨院', cat: 'service',
-    pin: { left: 24.0, top: 25.3 }, size: { w: 4.5, d: 4, h: 3.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/icure/',
-    logo: 'https://www.gfo-sc.jp/files/20190606/260a70961789e801bd30039d8b0317b9f9835130.png',
-    desc: '「柔道整復師」「鍼灸師」の国家資格を持った施術者が責任をもって施術。肩こり・腰痛などの不調を根本から改善へ導きます。',
-  },
-  {
-    id: 'event-lab', floor: 'b1f', entry: 'E1', name: 'The Lab.（EVENT Lab.）', en: 'Event Space',
-    tag: 'イベントスペース', cat: 'kc',
-    pin: { left: 55.2, top: 22.0 }, size: { w: 18, d: 10, h: 6 },
-    url: 'https://kc-space.jp/eventlab/',
-    logo: 'https://www.gfo-sc.jp/files/20180913/35ff76fdd956c47afd5ce02c38f209dec0ff844c.png',
-    desc: 'ナレッジキャピタルの大型イベントスペース。展示会・体験イベント・ワークショップなど、日々多彩な催しが開かれています。',
-  },
-  {
-    id: 'eyecity', floor: 'b1f', entry: 'B0', name: 'eyecity', en: 'eyecity',
-    tag: 'コンタクトレンズ', cat: 'service',
-    pin: { left: 11.4, top: 27.9 }, size: { w: 5, d: 4.5, h: 3.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/eyecity/',
-    logo: 'https://www.gfo-sc.jp/files/20180925/064cb7b5af8cc76c6413b6c6bbc371c28e2fdc36.png',
-    desc: 'お手頃価格のコンタクトレンズから高機能な遠近両用・乱視用、カラーコンタクトまで幅広く取り扱い。お気軽にご相談ください。',
-  },
-  {
-    id: 'world-beer', floor: 'b1f', entry: 'C2', name: '世界のビール博物館', en: 'World Beer Museum',
-    tag: 'ビアレストラン', cat: 'cafe',
-    pin: { left: 28.0, top: 42.9 }, size: { w: 7, d: 6, h: 4.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/world-beer/',
-    logo: 'https://www.gfo-sc.jp/files/20180925/8d1f045b44b314b55758961606b50882415557a4.png',
-    desc: '80種類以上のビールの品揃え！ドイツ、ベルギー、イギリス、アメリカ、チェコ、アジアなど世界のビールを樽生と料理と共に楽しめるビアレストラン。',
-  },
-  {
-    id: 'world-wine', floor: 'b1f', entry: 'C3', name: '世界のワイン博物館', en: 'World Wine Museum',
-    tag: 'イタリアン・フレンチ', cat: 'cafe',
-    pin: { left: 24.6, top: 49.9 }, size: { w: 7, d: 6, h: 4.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/world-wine/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/6afc5836b0003e4f08df77242b97e3362fee2994.png',
-    desc: '2000本収納可能な特注ワインセラーを備え、いつでも世界各国のワインを楽しめるレストラン。こだわりのグラスワインと料理のマリアージュを。',
-  },
-  {
-    id: 'cocokara', floor: 'b1f', entry: 'A2', name: 'ココカラファイン', en: 'Cocokara Fine',
-    tag: 'ドラッグストア・調剤薬局', cat: 'service',
-    pin: { left: 17.4, top: 19.5 }, size: { w: 7, d: 5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/cocokarafine/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/7f96e25ed68f7e9f23e70b5fd4d93e7f414aa968.png',
-    desc: '「美しさと健やかさを、もっと楽しく、身近に」。医薬品や健康食品、化粧品などヘルス＆ビューティ関連商品を中心に取り扱うドラッグストア。',
-  },
-  {
-    id: 'mitsui-atm', floor: 'b1f', entry: 'B5', name: '三井住友銀行 ATM', en: 'SMBC ATM',
-    tag: 'ATM', cat: 'service',
-    pin: { left: 35.7, top: 27.3 }, size: { w: 4, d: 3.5, h: 3 },
-    url: 'https://www.gfo-sc.jp/shop-detail/mitsui-north/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/ed474a7cd4aa7eb1685767111049a94b91768ca5.png',
-    desc: '生体認証・IC対応ATM設置拠点。',
-  },
-  {
-    id: 'umekita-ganka', floor: 'b1f', entry: 'B2', name: '梅北眼科', en: 'Umekita Eye Clinic',
-    tag: '眼科', cat: 'service',
-    pin: { left: 19.4, top: 29.5 }, size: { w: 4.5, d: 4, h: 3.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/umekitaganka/',
-    logo: 'https://www.gfo-sc.jp/files/20180925/be247a5b6254d7f59fd4013c87ae45009f5a95a3.png',
-    desc: 'お子様からお年寄りまで、安全で適切な治療を基本に地域に開かれた医院を目指す眼科クリニック。眼科一般治療のほかコンタクト処方も。',
-  },
-  {
-    id: 'orix-rentacar', floor: 'b1f', entry: 'A3', name: 'オリックスレンタカー', en: 'ORIX Rent-A-Car',
-    tag: 'レンタカー', cat: 'service',
-    pin: { left: 27.6, top: 24.7 }, size: { w: 4.5, d: 4, h: 3.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/orix/',
-    logo: 'https://www.gfo-sc.jp/files/20180925/b7eb60ee0e1dc18943697e7ee2001c0a95ef9cf8.png',
-    desc: 'コンパクトタイプから高級車まで幅広い車種を用意するレンタカーステーション。旅行やビジネスの拠点、グランフロントから直接出発できます。',
-  },
-  {
-    id: 'hakuyosya', floor: 'b1f', entry: 'B4', name: '白洋舍クリーニング', en: 'Hakuyosha',
-    tag: 'クリーニング', cat: 'service',
-    pin: { left: 31.5, top: 30.5 }, size: { w: 4.5, d: 4, h: 3.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/hakuyosya/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/a82d7fc9c844353f49f09f919d104d2042345d24.png',
-    desc: '1907年に日本で初めてドライクリーニングを導入した白洋舍。大切な衣類を確かな技術でケアします。',
-  },
-  {
-    id: 'seven-eleven', floor: 'b1f', entry: 'A3', name: 'セブン-イレブン', en: 'Seven-Eleven',
-    tag: 'コンビニエンスストア', cat: 'service',
-    pin: { left: 25.8, top: 19.8 }, size: { w: 6, d: 5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/7eleven/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/8c57de944147070d924cae4b71072b6c7389bc65.png',
-    desc: '従来のカラーとは全く違う、グランフロント仕様のスタイリッシュなセブン-イレブン。',
+    id: 'media', no: 30, entry: 'M1', name: 'メディアセンター', en: 'MEDIA CENTER',
+    tag: '図書館・ぴあら', cat: 'lecture',
+    pin: { left: 44, top: 43 }, size: { w: 13, d: 10, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/library/',
+    desc: 'BKCの図書館。開架図書、新聞・雑誌閲覧室、ぴあら（ラーニングコモンズ）、マルチメディアルーム、グループ学習室など。テスト前の自習・グループワークの定番スポット。',
   },
 
-  // ---------------- 2F ----------------
+  // ---------- 食堂・カフェ ----------
   {
-    id: 'muji', floor: '2f', entry: 'K3', name: '無印良品', en: 'MUJI',
-    tag: 'インテリア・生活雑貨・衣料', cat: 'interior',
-    pin: { left: 21.5, top: 22.0 }, size: { w: 13, d: 9, h: 5.5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/muji_2f/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/e3391f93ce5e946b3604c0671635bd74b0902e17.png',
-    desc: '衣服から生活雑貨、食品まで「感じ良いくらし」を支える商品が揃う無印良品。シンプルで長く使えるものづくりが魅力です。',
+    id: 'union', no: 31, entry: 'U1', name: 'ユニオンスクエア', en: 'UNION SQUARE',
+    tag: '生協食堂・ショップ', cat: 'food',
+    pin: { left: 36, top: 56 }, size: { w: 12, d: 9, h: 5 },
+    url: 'https://www.ritsumeikancoop.jp/',
+    desc: '生協食堂・ショップ、ユニオンホールなど。BKC最大の学食。お昼のピークは大混雑するので少し時間をずらすのがコツ。',
   },
   {
-    id: 'sense-of-place', floor: '2f', entry: 'S0', name: 'SENSE OF PLACE by URBAN RESEARCH', en: 'SENSE OF PLACE',
-    tag: 'メンズ・レディス', cat: 'fashion',
-    pin: { left: 17.8, top: 52.2 }, size: { w: 11, d: 7, h: 5 },
-    url: 'https://www.gfo-sc.jp/shop-detail/sense-of-place/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/020c92c725b4569af40ef3cf2107a7527a12dd94.png',
-    desc: '「THE WORLD STANDARD FASHION」。グローバルスタンダードなトレンドを、手に取りやすい価格で提案するアーバンリサーチのブランド。',
+    id: 'link', no: 34, entry: 'L1', name: 'リンクスクエア', en: 'LINK SQUARE',
+    tag: '生協食堂・書籍部', cat: 'food',
+    pin: { left: 50, top: 36 }, size: { w: 10, d: 8, h: 5 },
+    url: 'https://www.ritsumeikancoop.jp/',
+    desc: '生協食堂・書籍部（本屋）。2階に生命科学部事務室など。北側エリアの授業・研究の合間のランチに便利。',
   },
   {
-    id: 'zoff', floor: '2f', entry: 'Z1', name: 'Zoff', en: 'Zoff',
-    tag: 'メガネ・サングラス', cat: 'fashion',
-    pin: { left: 38.9, top: 26.7 }, size: { w: 5, d: 4.5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/zoff/',
-    logo: 'https://www.gfo-sc.jp/files/20210309/d0e983c75990ae96caf8883aacc3f1a41332a9b5.png',
-    desc: 'メガネを「マイナスをプラスに変える存在」へ。豊富なフレームと最短即日渡しで、ファッションとしてのアイウェアを提案するZoff。',
+    id: 'ccube', no: 15, entry: 'CB', name: 'シー・キューブ', en: 'C-CUBE',
+    tag: 'レストラン', cat: 'food',
+    pin: { left: 60, top: 49 }, size: { w: 7, d: 5, h: 4 },
+    url: 'https://www.ritsumeikancoop.jp/',
+    desc: 'ナデシコ食堂（レストラン）。落ち着いて食事したい日に。',
   },
   {
-    id: 'seiko-boutique', floor: '2f', entry: 'K4', name: 'セイコーブティック', en: 'Seiko Boutique',
-    tag: '腕時計', cat: 'fashion',
-    pin: { left: 26.9, top: 37.6 }, size: { w: 5, d: 4, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/seiko_boutique/',
-    logo: 'https://www.gfo-sc.jp/files/20190615/d9d18ab7f875eb2051f146eb05bd2293b0bf0ef3.jpg',
-    desc: 'セイコーブランドのみを取り扱うブティック。革新と洗練を体現した店内で、スポーツからドレスまで多彩なウォッチを。',
+    id: 'canopy', no: 16, entry: 'BT', name: 'キャノピー', en: 'CANOPY',
+    tag: 'バス営業所・売店', cat: 'life',
+    pin: { left: 56, top: 72 }, size: { w: 5, d: 4, h: 3 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '近江鉄道バス営業所など。バスの定期券・回数券はこちら。目の前がバスターミナル。',
+  },
+
+  // ---------- 窓口・サポート ----------
+  {
+    id: 'adseminario', no: 7, entry: 'AC1', name: 'アドセミナリオ', en: 'AD-SEMINARIO',
+    tag: '学部事務室・学びステーション', cat: 'admin',
+    pin: { left: 58, top: 63 }, size: { w: 11, d: 8, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '経済学部事務室、食マネジメント学部事務室、スポーツ健康科学部事務室、学びステーション、教室など。履修や成績の手続きは「学びステーション」へ。',
   },
   {
-    id: 'samsonite', floor: '2f', entry: 'K5', name: 'Samsonite BLACK LABEL', en: 'Samsonite BLACK LABEL',
-    tag: 'バッグ', cat: 'fashion',
-    pin: { left: 33.2, top: 37.2 }, size: { w: 5, d: 4, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/samsonite/',
-    logo: 'https://www.gfo-sc.jp/files/20220609/122e1af6107ac6e8bff18cad06e48acbee9f1209.png',
-    desc: 'グローバルバッグブランド「サムソナイト」の上位ライン。上質な日常や旅のスタイルを彩るプレミアムなコレクション。',
+    id: 'central-arc', no: 23, entry: 'C1', name: 'セントラルアーク', en: 'CENTRAL ARC',
+    tag: '学生オフィス・BBP', cat: 'admin',
+    pin: { left: 44, top: 64 }, size: { w: 10, d: 7, h: 5 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '学生オフィス、学生サポートルーム、障害学生支援室、ドリーム・クロスラウンジ、国際教育センター、キャリア教育センター、言語教育センター、Beyond Borders Plaza（BBP）など。奨学金・課外活動・留学の相談はここ。',
   },
   {
-    id: 'iori', floor: '2f', entry: 'K5', name: '伊織', en: 'iori',
-    tag: 'タオル・ベビー・雑貨', cat: 'interior',
-    pin: { left: 34.8, top: 29.4 }, size: { w: 5, d: 4.5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/iori/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/dde189ea9df2cc6e12037c4b0bb3a0c40cc5d6c0.png',
-    desc: '百十余年の歴史を受け継ぐ「今治タオル」の専門店。確かな品質のタオルやベビーアイテム、雑貨が揃います。',
+    id: 'core-station', no: 18, entry: 'CO', name: 'コアステーション', en: 'CORE STATION',
+    tag: '理工学部事務室・キャンパス管理室', cat: 'admin',
+    pin: { left: 54, top: 48 }, size: { w: 9, d: 7, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'キャンパス管理室、BKCキャンパス業務窓口、理工学部事務室、BKC地域連携課、教員研究室、役員室、立命館みらい保育園など。落とし物・施設利用の窓口もこちら。',
+  },
+
+  // ---------- 研究・実験棟 ----------
+  {
+    id: 'east-wing', no: 8, entry: 'N1', name: 'イーストウイング', en: 'EAST WING',
+    tag: '研究実験室', cat: 'research',
+    pin: { left: 42, top: 26 }, size: { w: 12, d: 7, h: 8 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '理工学部、生命科学部、薬学部の研究実験室、教員・院生研究室。',
   },
   {
-    id: 'avirex', floor: '2f', entry: 'K6', name: 'AVIREX', en: 'AVIREX',
-    tag: 'メンズ・レディス・キッズ', cat: 'fashion',
-    pin: { left: 39.0, top: 35.5 }, size: { w: 5, d: 4.5, h: 4 },
-    url: 'https://www.gfo-sc.jp/shop-detail/avirex/',
-    logo: 'https://www.gfo-sc.jp/files/20180827/e210dd19c7cb1b12605c35c170cfd072e2531b7e.png',
-    desc: '米空軍の正式コンストラクターの実績を持つアヴィレックス。歴史が物語る機能性と加工技術を駆使したミリタリーカジュアル。',
+    id: 'west-wing', no: 9, entry: 'N2', name: 'ウエストウイング', en: 'WEST WING',
+    tag: '研究実験室・保健センター', cat: 'research',
+    pin: { left: 34, top: 27 }, size: { w: 12, d: 7, h: 8 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '理工学部の研究実験室、教員・院生研究室、保健センター。体調が悪くなったら保健センターへ。',
   },
   {
-    id: 'rayban', floor: '2f', entry: 'K6', name: 'Ray-Ban Store', en: 'Ray-Ban Store',
-    tag: 'メガネ・サングラス', cat: 'fashion',
-    pin: { left: 40.4, top: 46.3 }, size: { w: 5, d: 4.5, h: 4 },
-    url: 'https://ray-ban-japan-store.com/',
-    logo: 'https://www.gfo-sc.jp/files/20211008/140a5381d5ad0a9850bb639862b128a57d022a02.png',
-    desc: 'アイウェアの王道Ray-Banの直営ストア。定番のウェイファーラーやアビエイターから最新モデルまで揃います。',
+    id: 'exl1', no: 10, entry: 'PM6', name: 'エクセル１', en: 'EXL1',
+    tag: '実験室', cat: 'research',
+    pin: { left: 50, top: 27 }, size: { w: 8, d: 6, h: 7 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '理工学部のための実験室など。',
   },
   {
-    id: 'softbank', floor: '2f', entry: 'Z1', name: 'ソフトバンク／ワイモバイル', en: 'SoftBank / Y!mobile',
-    tag: '携帯電話', cat: 'service',
-    pin: { left: 45.3, top: 29.7 }, size: { w: 6, d: 5, h: 4 },
-    url: 'https://kc-i.jp/facilities/fls/softbank/',
-    logo: 'https://www.gfo-sc.jp/files/20180913/35ff76fdd956c47afd5ce02c38f209dec0ff844c.png',
-    desc: 'ソフトバンク・ワイモバイルの取扱店。新規契約・機種変更・各種相談はこちらで。',
+    id: 'exl2', no: 11, entry: 'NE1', name: 'エクセル２', en: 'EXL2',
+    tag: '研究実験室', cat: 'research',
+    pin: { left: 56, top: 23 }, size: { w: 7, d: 6, h: 7 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '理工学部、生命科学部、薬学部の研究実験室。',
   },
   {
-    id: 'au-style', floor: '2f', entry: 'L2', name: 'au Style OSAKA', en: 'au Style OSAKA',
-    tag: '携帯電話', cat: 'service',
-    pin: { left: 55.7, top: 52.0 }, size: { w: 6, d: 5, h: 4 },
-    url: 'https://kc-i.jp/facilities/fls/kddi/',
-    logo: 'https://www.gfo-sc.jp/files/20180913/35ff76fdd956c47afd5ce02c38f209dec0ff844c.png',
-    desc: 'auの旗艦店「au Style OSAKA」。最新スマートフォンの体験や各種手続きができます。',
+    id: 'exl3', no: 12, entry: 'NE2', name: 'エクセル３', en: 'EXL3',
+    tag: '研究実験室', cat: 'research',
+    pin: { left: 60, top: 30 }, size: { w: 7, d: 6, h: 7 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '理工学部の研究実験室。',
   },
   {
-    id: 'subway', floor: '2f', entry: 'Q1', name: 'サブウェイ野菜ラボ', en: 'SUBWAY',
-    tag: 'サンドイッチ', cat: 'cafe',
-    pin: { left: 65.5, top: 36.1 }, size: { w: 5, d: 4, h: 4 },
-    url: 'https://kc-i.jp/facilities/fls/subway/',
-    logo: 'https://www.gfo-sc.jp/files/20180913/35ff76fdd956c47afd5ce02c38f209dec0ff844c.png',
-    desc: '野菜にこだわるサブウェイの実験店舗「野菜ラボ」。店産店消をコンセプトに、新鮮なサンドイッチを提供します。',
+    id: 'science', no: 21, entry: 'N6', name: 'サイエンスコア', en: 'SCIENCE CORE',
+    tag: '研究実験室・薬学部事務室', cat: 'research',
+    pin: { left: 54, top: 13 }, size: { w: 10, d: 7, h: 8 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '生命科学部、薬学部の研究実験室、共同研究室、教員研究室、薬学部事務室など。',
   },
   {
-    id: 'springx', floor: '2f', entry: 'Q1', name: 'SpringX', en: 'SpringX',
-    tag: 'カフェ&バー・教室', cat: 'kc',
-    pin: { left: 65.8, top: 41.1 }, size: { w: 6, d: 5, h: 4.5 },
-    url: 'https://kc-i.jp/facilities/springx/',
-    logo: 'https://www.gfo-sc.jp/files/20180913/35ff76fdd956c47afd5ce02c38f209dec0ff844c.png',
-    desc: '学びと交流が生まれるナレッジキャピタルの拠点。カフェ&バーと教室が一体になった、大人の学び場です。',
+    id: 'cel', no: 22, entry: 'N4', name: 'セル', en: 'CEL',
+    tag: '研究実験室', cat: 'research',
+    pin: { left: 36, top: 17 }, size: { w: 6, d: 5, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '理工学部の研究実験室。',
   },
   {
-    id: 'active-lab', floor: '2f', entry: 'A1', name: 'The Lab.（ACTIVE Lab.）', en: 'Exhibition & Communication',
-    tag: '展示・交流スペース', cat: 'kc',
-    pin: { left: 60.3, top: 21.0 }, size: { w: 12, d: 7, h: 5 },
-    url: 'https://kc-i.jp/facilities/the-lab/active-lab/',
-    logo: 'https://www.gfo-sc.jp/files/20180913/35ff76fdd956c47afd5ce02c38f209dec0ff844c.png',
-    desc: '大学・企業の最先端技術やプロジェクトを体験できる展示・交流スペース。見て、触れて、対話しながら未来を感じられます。',
+    id: 'frontier', no: 14, entry: 'N3', name: '学術フロンティア共同研究センター', en: 'FRONTIER RESEARCH CENTER',
+    short: '学術フロンティア', tag: '共同研究センター', cat: 'research',
+    pin: { left: 28, top: 21 }, size: { w: 8, d: 6, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '理工学部、生命科学部の研究実験室など。',
   },
   {
-    id: 'suntory-whisky-house', floor: '2f', entry: 'L7', name: 'SUNTORY WHISKY HOUSE', en: 'SUNTORY WHISKY HOUSE',
-    tag: 'バー・ダイニング・ギャラリー', cat: 'kc',
-    pin: { left: 87.7, top: 23.3 }, size: { w: 14, d: 8, h: 5 },
-    url: 'https://kc-i.jp/facilities/fls/suntory/',
-    logo: 'https://www.gfo-sc.jp/files/20180913/35ff76fdd956c47afd5ce02c38f209dec0ff844c.png',
-    desc: 'ウイスキーの魅力を丸ごと体験できる複合空間。Whisky Bottle Bar・ダイニング「WWW.W」・樽ものがたり・ギャラリーが集結。',
+    id: 'techno', no: 24, entry: 'R2', name: 'テクノコンプレクス', en: 'TECHNO-COMPLEX',
+    tag: '産学連携・研究センター', cat: 'research',
+    pin: { left: 22, top: 76 }, size: { w: 9, d: 7, h: 5 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'SRセンター、産学連携ラボラトリー、ハイテク・リサーチセンター、マイクロシステムセンター、ロボティクスFAセンターなど。',
+  },
+  {
+    id: 'intra-photonics', no: 25, entry: 'EG1', name: 'イントラフォトニクスリサーチセンター', en: 'INTRA-PHOTONICS RESEARCH CENTER',
+    short: 'フォトニクス研', tag: '研究センター', cat: 'research',
+    pin: { left: 14, top: 76 }, size: { w: 6, d: 5, h: 4 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '光技術（フォトニクス）の研究センター。',
+  },
+  {
+    id: 'bousai', no: 29, entry: 'R1', name: '防災システムリサーチセンター', en: 'RESEARCH CENTER FOR DISASTER MITIGATION SYSTEM',
+    short: '防災リサーチ', tag: '研究センター', cat: 'research',
+    pin: { left: 30, top: 78 }, size: { w: 7, d: 5, h: 5 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'BKCリサーチオフィス、理工学部の研究実験室。',
+  },
+  {
+    id: 'rexl', no: 35, entry: 'SW5', name: 'レクセル', en: 'REXL',
+    tag: 'RI実験室', cat: 'research',
+    pin: { left: 15, top: 68 }, size: { w: 6, d: 5, h: 4 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'RI（放射性同位元素）実験室。',
+  },
+  {
+    id: 'workshop', no: 36, entry: 'WS', name: 'ワークショップラボ', en: 'WORKSHOP LAB',
+    tag: '機械工作実習室', cat: 'research',
+    pin: { left: 30, top: 45 }, size: { w: 6, d: 5, h: 4 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '機械工作実習室。ものづくり実習はここ。',
+  },
+  {
+    id: 'incubator', no: 32, entry: 'R3', name: '立命館大学BKCインキュベータ', en: 'RITSUMEIKAN BKC INCUBATOR',
+    short: 'インキュベータ', tag: '起業家育成施設', cat: 'research',
+    pin: { left: 38, top: 84 }, size: { w: 8, d: 6, h: 5 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '（独）中小機構による大学連携起業家育成施設（開発・実験・研究施設）、BKCリサーチオフィス。',
+  },
+  {
+    id: 'tricea', no: 39, entry: 'NE3', name: 'トリシア', en: 'TRICEA',
+    tag: '研究実験室', cat: 'research',
+    pin: { left: 68, top: 30 }, size: { w: 7, d: 6, h: 8 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '理工学部の研究実験室、教員・院生研究室。',
+  },
+  {
+    id: 'biolink', no: 40, entry: 'NE3', name: 'バイオリンク', en: 'BIO LINK',
+    tag: '研究実験室・サークルルーム', cat: 'research',
+    pin: { left: 66, top: 20 }, size: { w: 8, d: 6, h: 7 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '生命科学部、薬学部の研究実験室、教員・院生研究室、サークルルームなど。',
+  },
+  {
+    id: 'biofrontier', no: 44, entry: 'N7', name: 'バイオフロンティア', en: 'BIO FRONTIER',
+    tag: '実験室', cat: 'research',
+    pin: { left: 61, top: 12 }, size: { w: 8, d: 6, h: 7 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '理工系学部の実験室など。',
+  },
+  {
+    id: 'crossverse', no: 42, entry: 'XV', name: '立命館先端クロスバースイノベーションコモンズ', en: 'ADVANCED CROSS-VERSE INNOVATION COMMONS',
+    short: 'クロスバース', tag: 'J-PEAKS研究施設', cat: 'research',
+    pin: { left: 77, top: 26 }, size: { w: 8, d: 6, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'J-PEAKS身体圏研究施設（クロスバースアリーナ等）。',
+  },
+  {
+    id: 'grassroots', no: 43, entry: 'GR', name: 'グラスルーツイノベーションセンター', en: 'GRASSROOTS INNOVATION CENTER',
+    short: 'グラスルーツ', tag: 'コワーキング・Fab', cat: 'research',
+    pin: { left: 70, top: 40 }, size: { w: 7, d: 6, h: 5 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'コワーキングスペース、GIC Fab、Startup Lounge、Communal Lab、個別ラボ。起業やプロトタイピングに挑戦するならここ。',
+  },
+  {
+    id: 'integration', no: 37, entry: 'E1', name: 'インテグレーションコア・ラルカディア', en: 'INTEGRATION CORE / RARCADIA',
+    short: 'ラルカディア', tag: 'スポ健 研究・教室', cat: 'research',
+    pin: { left: 72, top: 48 }, size: { w: 11, d: 8, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'スポーツ健康科学部の研究実験室、教員研究室、教室など。',
+  },
+
+  // ---------- スポーツ ----------
+  {
+    id: 'gym', no: 26, entry: 'W2', name: 'BKCジム', en: 'BKC GYMNASIUM',
+    tag: 'アリーナ・トレーニングルーム', cat: 'sports',
+    pin: { left: 14, top: 57 }, size: { w: 12, d: 9, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '第1・第2アリーナ、トレーニングルーム、ミーティングルームなど。体育会の活動拠点。',
+  },
+  {
+    id: 'sports-commons', no: 41, entry: 'SPC', name: 'BKCスポーツ健康コモンズ', en: 'BKC SPORTS AND HEALTH COMMONS',
+    short: 'スポーツコモンズ', tag: 'プール・アリーナ・知るカフェ', cat: 'sports',
+    pin: { left: 80, top: 13 }, size: { w: 13, d: 9, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'アリーナ、屋内プール、屋外プール、トレーニングルーム、アクティブスペース、リラックスコモンズ、知るカフェなど。一般学生も使える運動施設。',
+  },
+  {
+    id: 'quince', entry: 'ST', name: 'Daigasエナジースタジアム', en: 'QUINCE STADIUM',
+    short: 'スタジアム', tag: '陸上競技場', cat: 'sports',
+    pin: { left: 75, top: 83 }, size: { w: 22, d: 14, h: 2.5 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'クインススタジアム。陸上トラックとフィールドを備えるBKCのメインスタジアム。木瓜原遺跡製鉄炉跡が保存されています。',
+  },
+  {
+    id: 'athlete-gym', no: 6, entry: 'SE2', name: 'アスリートジム', en: 'ATHLETE GYM',
+    tag: 'スポーツ強化オフィス', cat: 'sports',
+    pin: { left: 66, top: 73 }, size: { w: 7, d: 5, h: 4 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'スポーツ強化オフィス、トレーニングルームなど。',
+  },
+  {
+    id: 'ground1', entry: 'G1', name: '第一グラウンド', en: 'GROUND 1',
+    tag: 'グラウンド', cat: 'sports',
+    pin: { left: 87, top: 11 }, size: { w: 13, d: 8, h: 0.6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '北東エリアのグラウンド。野球・ソフトボールなどで利用。',
+  },
+  {
+    id: 'ground3', entry: 'EG1', name: '第三グラウンド', en: 'GROUND 3',
+    tag: 'グラウンド', cat: 'sports',
+    pin: { left: 8, top: 80 }, size: { w: 9, d: 6, h: 0.6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '南西エリアのグラウンド。',
+  },
+  {
+    id: 'tennis', entry: 'TN', name: 'テニスコート', en: 'TENNIS COURTS',
+    tag: 'テニスコート', cat: 'sports',
+    pin: { left: 66, top: 6 }, size: { w: 10, d: 5, h: 0.6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '北エリアのテニスコート。',
+  },
+  {
+    id: 'green-field', entry: 'GFD', name: 'BKCグリーンフィールド', en: 'BKC GREEN FIELD',
+    short: 'グリーンフィールド', tag: '人工芝フィールド', cat: 'sports',
+    pin: { left: 91, top: 77 }, size: { w: 9, d: 6, h: 0.6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '人工芝フィールドとアスリートクラブハウス。ラグビー・アメフトなどの拠点。',
+  },
+
+  // ---------- 課外・サークル ----------
+  {
+    id: 'act-alpha', no: 1, entry: 'SW3', name: 'アクトα', en: 'ACT α',
+    tag: 'サークルラボ', cat: 'circle',
+    pin: { left: 32, top: 68 }, size: { w: 5, d: 4, h: 3 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'サークルラボなど。課外活動の拠点。',
+  },
+  {
+    id: 'act-mu', no: 2, entry: 'ACT', name: 'アクトμ', en: 'ACT μ',
+    tag: '音楽練習場', cat: 'circle',
+    pin: { left: 28, top: 63 }, size: { w: 5, d: 4, h: 3 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '音楽練習場など。軽音・吹奏楽などの練習はここ。',
+  },
+  {
+    id: 'act-beta', no: 3, entry: 'SW4', name: 'アクトβ', en: 'ACT β',
+    tag: 'サークルルーム', cat: 'circle',
+    pin: { left: 24, top: 68 }, size: { w: 5, d: 4, h: 3 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'サークルルームなど。',
+  },
+  {
+    id: 'act-sigma', no: 4, entry: 'SW4', name: 'アクトσ', en: 'ACT σ',
+    tag: 'サークルルーム', cat: 'circle',
+    pin: { left: 20, top: 64 }, size: { w: 5, d: 4, h: 3 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: 'サークルルームなど。',
+  },
+
+  // ---------- 生活・施設 ----------
+  {
+    id: 'rohm', no: 33, entry: 'GM', name: '立命館大学ローム記念館', en: 'RITSUMEIKAN UNIVERSITY ROHM PLAZA',
+    short: 'ローム記念館', tag: '大会議室・研究室', cat: 'life',
+    pin: { left: 44, top: 88 }, size: { w: 8, d: 6, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '大会議室、教員研究室など。正門近くのガラス張りの建物。',
+  },
+  {
+    id: 'intl-house', no: 38, entry: 'IH', name: 'BKCインターナショナルハウス', en: 'BKC INTERNATIONAL HOUSE',
+    short: 'Iハウス', tag: '国際教育寮', cat: 'life',
+    pin: { left: 86, top: 40 }, size: { w: 9, d: 7, h: 6 },
+    url: 'https://www.ritsumei.ac.jp/',
+    desc: '国際教育寮。留学生と日本人学生が共に生活する寮。',
   },
 ];
 
-// ---- 施設・エントランス（経路の出発/到着地点にもなる）----
+// 屋外キャンパスは単一マップ（全建物とも floor = 'campus'）
+SHOPS.forEach(s => { s.floor = 'campus'; });
+
+// ---- 施設・エントランス（経路の出発地点にもなる）----
 export const PLACES = [
-  // 1F
-  { id: 'ent-north1', floor: '1f', entry: 'T1', name: '北1 エレベーター', kind: 'entrance', pin: { left: 34, top: 10 } },
-  { id: 'ent-north2', floor: '1f', entry: 'S2', name: '北2 エレベーター（正面入口）', kind: 'entrance', pin: { left: 40, top: 62 } },
-  { id: 'ent-north3', floor: '1f', entry: 'T3', name: '北3 エレベーター', kind: 'entrance', pin: { left: 65, top: 10 } },
-  { id: 'ent-north4', floor: '1f', entry: 'W0', name: '北4 エレベーター', kind: 'entrance', pin: { left: 5, top: 36 } },
-  { id: 'ent-south', floor: '1f', entry: 'N0', name: '南館 連絡通路', kind: 'entrance', pin: { left: 7, top: 19 } },
-  { id: 'info', floor: '1f', entry: 'S1', name: 'インフォメーション', kind: 'info', pin: { left: 43, top: 47 } },
-  { id: 'plaza', floor: '1f', entry: 'P3', name: 'ナレッジプラザ（吹き抜け広場）', kind: 'plaza', pin: { left: 52, top: 38 } },
-  // B1F
-  { id: 'ent-north1-b1', floor: 'b1f', entry: 'T1', name: '北1 エレベーター（B1F）', kind: 'entrance', pin: { left: 34, top: 10 } },
-  { id: 'ent-north2-b1', floor: 'b1f', entry: 'D2', name: '北2 エレベーター（B1F）', kind: 'entrance', pin: { left: 41, top: 46 } },
-  { id: 'ent-north3-b1', floor: 'b1f', entry: 'E3', name: '北3 エレベーター（B1F）', kind: 'entrance', pin: { left: 60, top: 10 } },
-  { id: 'ent-north4-b1', floor: 'b1f', entry: 'T4', name: '北4 エレベーター（B1F）', kind: 'entrance', pin: { left: 4, top: 36 } },
-  // 2F
-  { id: 'ent-north1-2f', floor: '2f', entry: 'T1', name: '北1 エレベーター（2F）', kind: 'entrance', pin: { left: 37, top: 10 } },
-  { id: 'ent-north2-2f', floor: '2f', entry: 'B2', name: '北2 エレベーター（2F）', kind: 'entrance', pin: { left: 44, top: 50 } },
-  { id: 'ent-north3-2f', floor: '2f', entry: 'T3', name: '北3 エレベーター（2F）', kind: 'entrance', pin: { left: 70, top: 14 } },
-  { id: 'ent-north4-2f', floor: '2f', entry: 'N4', name: '北4 エレベーター（2F）', kind: 'entrance', pin: { left: 9, top: 27 } },
-  { id: 'deck-south-2f', floor: '2f', entry: 'SK', name: '南館 連絡デッキ（2F）', kind: 'entrance', pin: { left: 3, top: 40 } },
+  { id: 'gate-main', floor: 'campus', entry: 'GM', name: '正門', kind: 'entrance', pin: { left: 52, top: 95 } },
+  { id: 'gate-east', floor: 'campus', entry: 'EG', name: '東門', kind: 'entrance', pin: { left: 9, top: 87 } },
+  { id: 'bus',       floor: 'campus', entry: 'BT', name: 'バスターミナル', kind: 'entrance', pin: { left: 55, top: 75 } },
+  { id: 'plaza',     floor: 'campus', entry: 'CS', name: 'セントラルサーカス', kind: 'plaza', pin: { left: 52, top: 68 } },
 ];
 
-// ---- 装飾用ブロック（クリック不可・雰囲気用 / 1Fのみ・現在非表示）----
-export const DECOR = [
-  { name: 'InterContinental Osaka', pin: { left: 76.5, top: 40 }, size: { w: 14, d: 13, h: 14 }, color: 0x9a8b7d, label: true },
-  { name: 'タワーB オフィス', pin: { left: 30, top: 48 }, size: { w: 13, d: 7, h: 9 }, color: 0x5a5f66, label: false },
-  { name: 'オフィスコア', pin: { left: 44, top: 21 }, size: { w: 8, d: 6, h: 9 }, color: 0x5a5f66, label: false },
-  { name: 'オフィスコア', pin: { left: 25.5, top: 31.5 }, size: { w: 6, d: 6, h: 8 }, color: 0x666b73, label: false },
-  { name: 'タワーC オフィス', pin: { left: 66, top: 44 }, size: { w: 9, d: 7, h: 9 }, color: 0x5a5f66, label: false },
-];
+// ---- 装飾用ブロック（現在は地面テクスチャ側で表現するため未使用）----
+export const DECOR = [];
 
-// ---- 施設ピクトグラム（1F・現在は公式図のピクトグラムを優先し未使用）----
+// ---- 施設ピクトグラム（未使用）----
 export const FACILITIES = [];

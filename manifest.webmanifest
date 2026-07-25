@@ -1,0 +1,20 @@
+{
+  "name": "立命館大学BKC バーチャルキャンパスマップ",
+  "short_name": "BKCマップ",
+  "description": "びわこ・くさつキャンパスの3Dバーチャルマップ。建物検索・最短経路案内・GPSナビ・ARナビ。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#120810",
+  "theme_color": "#120810",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

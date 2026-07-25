@@ -1,15 +1,15 @@
 // ============================================================
-// GFO 北館1F バーチャル3Dマップ
+// 立命館大学BKC バーチャルキャンパスマップ
 // ============================================================
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import {
   MAP_W, MAP_D, toWorld, gpsToWorld, CATEGORIES, SHOPS, PLACES, DECOR,
-  FLOORS, FLOOR_ORDER, FLOOR_LINKS,
+  FLOORS, FLOOR_ORDER, FLOOR_LINKS, WATERS, FIELDS,
 } from './data.js';
 import { startAR } from './ar.js';
 
-const METER_PER_UNIT = 1.6; // 1ワールド単位 ≈ 1.6m（実寸感の目安）
+const METER_PER_UNIT = 4; // 1ワールド単位 ≈ 4m（キャンパス全幅 ≈ 680m）
 const isMobileDevice = matchMedia('(max-width: 640px), (pointer: coarse)').matches;
 
 // ------------------------------------------------------------
@@ -45,18 +45,18 @@ const NIGHT = { bg: 0x0a1020, fog: 0x0a1020, hemi: 0.25, sun: 0.25, amb: 0.15 };
 let isNight = false;
 
 scene.background = new THREE.Color(DAY.bg);
-scene.fog = new THREE.Fog(DAY.fog, 160, 380);
+scene.fog = new THREE.Fog(DAY.fog, 260, 720);
 
-const camera = new THREE.PerspectiveCamera(50, initialViewport.width / initialViewport.height, 0.1, 800);
-camera.position.set(0, 85, 78);
+const camera = new THREE.PerspectiveCamera(50, initialViewport.width / initialViewport.height, 0.1, 1600);
+camera.position.set(0, 110, 100);
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.maxPolarAngle = Math.PI / 2.15;
 controls.minPolarAngle = 0.18;
-controls.minDistance = 12;
-controls.maxDistance = 220;
+controls.minDistance = 14;
+controls.maxDistance = 430;
 controls.enablePan = true;
 controls.screenSpacePanning = false; // 指のスライドで地図が平行移動（地図アプリ操作）
 controls.rotateSpeed = isMobileDevice ? 0.55 : 1;
@@ -74,12 +74,12 @@ scene.add(hemi);
 const amb = new THREE.AmbientLight(0xffffff, DAY.amb);
 scene.add(amb);
 const sun = new THREE.DirectionalLight(0xfff4e0, DAY.sun);
-sun.position.set(-60, 90, 40);
+sun.position.set(-90, 120, 60);
 sun.castShadow = true;
 sun.shadow.mapSize.set(isMobileDevice ? 1024 : 2048, isMobileDevice ? 1024 : 2048);
-sun.shadow.camera.left = -90; sun.shadow.camera.right = 90;
-sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
-sun.shadow.camera.far = 300;
+sun.shadow.camera.left = -120; sun.shadow.camera.right = 120;
+sun.shadow.camera.top = 100; sun.shadow.camera.bottom = -100;
+sun.shadow.camera.far = 420;
 sun.shadow.bias = -0.0004;
 scene.add(sun);
 
@@ -89,8 +89,8 @@ scene.add(sun);
 //   遠景まで滑らかなグラデーションを描き、その色を反射環境にも使う。
 // ------------------------------------------------------------
 const SKY = {
-  day:   { top: 0x08111c, bottom: 0x172433 },
-  night: { top: 0x02050a, bottom: 0x0b1320 },
+  day:   { top: 0x0b1220, bottom: 0x2a2030 },
+  night: { top: 0x02050a, bottom: 0x140b14 },
 };
 const skyMat = new THREE.ShaderMaterial({
   uniforms: {
@@ -110,7 +110,7 @@ const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide,
   depthWrite: false,
 });
-const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat);
+const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), skyMat);
 sky.renderOrder = -1;
 scene.add(sky);
 scene.background = null; // スカイドームが全天を覆うため単色背景は不要
@@ -131,23 +131,135 @@ function refreshEnvironment() {
 refreshEnvironment();
 
 // ------------------------------------------------------------
-// フロア（B1F/1F/2Fを縦に積層。公式フロアマップをそのまま基準図として使用）
-//   表示中フロアはフル表示、他フロアは公式図がうっすら透けて見える
+// キャンパスの地面（芝生・通路・池・グラウンドをCanvasで手続き生成）
+//   画像アセットに依存しないため、CDN配信・オフラインでも確実に描画できる
 // ------------------------------------------------------------
-function makeGroundTexture(src) {
-  // CanvasTextureは一部のスマホGPUで更新時に黒い帯が出るため、
-  // power-of-two化したJPEGをGPUへ一度だけ直接転送する。
-  const tex = new THREE.TextureLoader().load(
-    src,
-    undefined,
-    undefined,
-    () => toast('公式フロアマップ画像を読み込めませんでした'),
-  );
+function makeCampusGroundTexture() {
+  const W = 2048, H = Math.round(W * MAP_D / MAP_W);
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const px = (left) => left / 100 * W;
+  const py = (top) => top / 100 * H;
+
+  // 芝生ベース（夕暮れのキャンパスの深緑）
+  const grad = g.createRadialGradient(W / 2, H / 2, H * 0.1, W / 2, H / 2, W * 0.62);
+  grad.addColorStop(0, '#1a3a26');
+  grad.addColorStop(0.7, '#142c1e');
+  grad.addColorStop(1, '#0d1f16');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, W, H);
+
+  // 芝のむら（毎回同じ見た目になるようsinベースの擬似乱数で生成）
+  for (let i = 0; i < 900; i++) {
+    const x = (Math.sin(i * 12.9898) * 0.5 + 0.5) * W;
+    const y = (Math.sin(i * 78.233) * 0.5 + 0.5) * H;
+    const r = 8 + (Math.sin(i * 3.7) * 0.5 + 0.5) * 26;
+    g.fillStyle = i % 2 ? 'rgba(30,66,44,0.16)' : 'rgba(10,24,17,0.16)';
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+
+  // 外周の自然緑地帯
+  g.fillStyle = 'rgba(9,26,17,0.55)';
+  for (let i = 0; i < 140; i++) {
+    const t = i / 140 * Math.PI * 2;
+    const x = W / 2 + Math.cos(t) * (W * 0.5 - 26) + Math.sin(i * 7.1) * 30;
+    const y = H / 2 + Math.sin(t) * (H * 0.5 - 22) + Math.cos(i * 5.3) * 22;
+    g.beginPath(); g.arc(x, y, 26 + (i % 5) * 7, 0, Math.PI * 2); g.fill();
+  }
+
+  // グラウンド・競技場
+  for (const f of FIELDS) {
+    const x = px(f.left), y = py(f.top);
+    const w = f.w / 100 * W, h = f.h / 100 * H;
+    g.save();
+    g.translate(x, y);
+    if (f.kind === 'track') {
+      // 陸上トラック（クインススタジアム）
+      g.fillStyle = '#7c3d2e';
+      g.beginPath(); g.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#1f5a33';
+      g.beginPath(); g.ellipse(0, 0, w / 2 - 26, h / 2 - 26, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 2;
+      for (const k of [8, 14, 20]) {
+        g.beginPath(); g.ellipse(0, 0, w / 2 - k, h / 2 - k, 0, 0, Math.PI * 2); g.stroke();
+      }
+    } else if (f.kind === 'dirt') {
+      g.fillStyle = '#6d5a41';
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 3;
+      g.strokeRect(-w / 2 + 5, -h / 2 + 5, w - 10, h - 10);
+    } else if (f.kind === 'tennis') {
+      g.fillStyle = '#2e5f52';
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 2;
+      const n = 3, cw = w / n;
+      for (let i = 0; i < n; i++) g.strokeRect(-w / 2 + i * cw + 6, -h / 2 + 6, cw - 12, h - 12);
+    } else if (f.kind === 'turf') {
+      g.fillStyle = '#1f6b3a';
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.strokeStyle = 'rgba(255,255,255,0.4)'; g.lineWidth = 3;
+      g.strokeRect(-w / 2 + 5, -h / 2 + 5, w - 10, h - 10);
+      g.beginPath(); g.moveTo(0, -h / 2 + 5); g.lineTo(0, h / 2 - 5); g.stroke();
+    } else if (f.kind === 'plot') {
+      // 薬草園（畝のある植栽区画）
+      g.fillStyle = '#3d4d2b';
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.strokeStyle = 'rgba(214,222,180,0.35)'; g.lineWidth = 2;
+      for (let i = 1; i < 4; i++) {
+        const yy = -h / 2 + h / 4 * i;
+        g.beginPath(); g.moveTo(-w / 2 + 4, yy); g.lineTo(w / 2 - 4, yy); g.stroke();
+      }
+    }
+    g.restore();
+  }
+
+  // 池
+  for (const wtr of WATERS) {
+    const x = px(wtr.left), y = py(wtr.top);
+    const rx = wtr.rx / 100 * W, ry = wtr.ry / 100 * H;
+    g.fillStyle = '#12374f';
+    g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(120,190,230,0.45)'; g.lineWidth = 3;
+    g.stroke();
+    g.fillStyle = 'rgba(140,200,235,0.12)';
+    g.beginPath(); g.ellipse(x - rx * 0.2, y - ry * 0.25, rx * 0.55, ry * 0.4, 0, 0, Math.PI * 2); g.fill();
+  }
+
+  // 通路（ナビグラフをそのまま舗装として描画。プロムナードは太く）
+  const fl = FLOORS.campus;
+  const mainNodes = new Set(['GM', 'PM1', 'BT', 'CS', 'PM2', 'PM3', 'PM4', 'PM5', 'PM6', 'PM7', 'PM8']);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  for (const pass of [
+    { color: 'rgba(20,32,26,0.9)', extra: 10 },   // 縁取り
+    { color: '#c9bda0', extra: 0 },               // 舗装
+  ]) {
+    for (const [a, b] of fl.navEdges) {
+      const A = fl.navNodes[a], B = fl.navNodes[b];
+      const wMain = mainNodes.has(a) && mainNodes.has(b) ? 30 : 14;
+      g.strokeStyle = pass.color;
+      g.lineWidth = wMain + pass.extra;
+      g.beginPath();
+      g.moveTo(px(A.left), py(A.top));
+      g.lineTo(px(B.left), py(B.top));
+      g.stroke();
+    }
+  }
+
+  // セントラルサーカス（円形広場）
+  {
+    const cs = fl.navNodes.CS;
+    const x = px(cs.left), y = py(cs.top);
+    g.fillStyle = '#c9bda0';
+    g.beginPath(); g.arc(x, y, 64, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(244,63,94,0.55)'; g.lineWidth = 5;
+    g.beginPath(); g.arc(x, y, 44, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = 'rgba(31,90,51,0.9)';
+    g.beginPath(); g.arc(x, y, 22, 0, Math.PI * 2); g.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  // ミップマップ＋異方性フィルタで、地図を斜めに傾けても細部が破綻せず滑らかに描画する。
-  tex.generateMipmaps = true;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.magFilter = THREE.LinearFilter;
   tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), isMobileDevice ? 4 : 8);
   return tex;
 }
@@ -159,7 +271,7 @@ for (const fid of FLOOR_ORDER) {
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(MAP_W, MAP_D),
     new THREE.MeshBasicMaterial({
-      map: makeGroundTexture(fl.map),
+      map: makeCampusGroundTexture(),
       transparent: true,
       // 台座など下層メッシュとのZ-fighting防止の深度バイアス
       polygonOffset: true,
@@ -182,7 +294,7 @@ for (const fid of FLOOR_ORDER) {
   ];
   const frame = new THREE.LineLoop(
     new THREE.BufferGeometry().setFromPoints(framePoints),
-    new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.72 })
+    new THREE.LineBasicMaterial({ color: 0xf43f5e, transparent: true, opacity: 0.72 })
   );
   frame.renderOrder = 4;
   scene.add(frame);
@@ -193,7 +305,7 @@ for (const fid of FLOOR_ORDER) {
 const base = new THREE.Mesh(
   new THREE.BoxGeometry(MAP_W + 6, 3, MAP_D + 6),
   new THREE.MeshStandardMaterial({
-    color: 0x101d2d, emissive: 0x08273a, emissiveIntensity: 0.55,
+    color: 0x140f1a, emissive: 0x2a0f1c, emissiveIntensity: 0.55,
     roughness: 0.62, metalness: 0.28,
   })
 );
@@ -251,7 +363,24 @@ const labelSprites = [];
 const shopGroup = new THREE.Group();
 scene.add(shopGroup);
 
-const GLASS_OPACITY = 0.32;
+const GLASS_OPACITY = 0.5;
+
+// ロゴは外部画像に依存せず、公式マップ番号＋カテゴリ色のモノグラムSVGを生成して使う
+// （外部リクエストゼロ = 障害点ゼロ。同時アクセスが増えても外部サーバーに負荷をかけない）
+function monogramLogo(shop) {
+  const color = CATEGORIES[shop.cat].css;
+  const label = shop.no != null ? String(shop.no) : (shop.short ?? shop.name).slice(0, 1);
+  const sub = (shop.short ?? shop.name).slice(0, 7);
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">` +
+    `<rect width="120" height="120" rx="24" fill="${color}" fill-opacity="0.14"/>` +
+    `<rect x="5" y="5" width="110" height="110" rx="20" fill="none" stroke="${color}" stroke-width="4"/>` +
+    `<text x="60" y="52" font-family="'Hiragino Kaku Gothic ProN',sans-serif" font-size="${label.length > 2 ? 30 : 40}" font-weight="800" fill="${color}" text-anchor="middle" dominant-baseline="central">${label}</text>` +
+    `<text x="60" y="92" font-family="'Hiragino Kaku Gothic ProN',sans-serif" font-size="15" font-weight="700" fill="#5b4a52" text-anchor="middle">${sub}</text>` +
+    `</svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+SHOPS.forEach(s => { s.logo = monogramLogo(s); });
 
 for (const shop of SHOPS) {
   const { x, z } = toWorld(shop.pin.left, shop.pin.top);
@@ -298,7 +427,7 @@ for (const shop of SHOPS) {
 
   // ラベル
   const labelY = fy + h + 3.0;
-  const label = makeLabelSprite(shop.name.length > 14 ? shop.en : shop.name, { border: CATEGORIES[shop.cat].css });
+  const label = makeLabelSprite(shop.short ?? shop.name, { border: CATEGORIES[shop.cat].css });
   label.position.set(x, labelY, z);
   label.userData = {
     type: 'shop', shop, baseY: labelY, phase: Math.random() * Math.PI * 2,
@@ -340,17 +469,31 @@ for (const d of DECOR) {
 // 並木・広場の演出
 // ------------------------------------------------------------
 const treeGroup = new THREE.Group();
-treeGroup.visible = false; // 公式図にも植栽表現があるため、推定3D装飾は重ねない
 scene.add(treeGroup);
 {
   const trunkGeo = new THREE.CylinderGeometry(0.22, 0.3, 1.6, 6);
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 1 });
   const leafGeo = new THREE.IcosahedronGeometry(1.5, 0);
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x62b06a, roughness: 0.9, flatShading: true });
-  const spots = [];
-  for (let l = 10; l <= 90; l += 4.5) spots.push([l + (Math.sin(l) * 0.8), 12.2]); // 北側並木
-  for (let t = 18; t <= 58; t += 5) spots.push([6, t]);                            // 西側並木
-  spots.push([46, 44], [59, 44], [46, 30]);                                        // プラザ周り
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a8a56, roughness: 0.9, flatShading: true });
+  const spots = [
+    // キャンパスプロムナード並木（正門〜セントラルサーカス）
+    [50.2, 62], [53.8, 62], [50.2, 66], [53.8, 66], [50.2, 71], [54.2, 71],
+    [50.2, 79], [53.8, 79], [50.2, 86], [53.8, 86], [49.8, 90], [54.2, 90],
+    // ビュートストリート沿い
+    [18, 64.5], [22, 70.5], [26, 70.5], [31, 64.5], [35, 70], [42, 66],
+    // 緑地・散策路
+    [46, 22], [57, 36], [30, 52], [33, 57], [20, 50], [12, 48], [10, 62],
+    [66, 54], [64, 66], [80, 60], [84, 55], [88, 66], [74, 60],
+    [22, 38], [14, 30], [20, 16], [70, 12], [76, 32], [84, 28], [90, 30],
+    [88, 48], [44, 78], [34, 74], [26, 80], [60, 88], [64, 84],
+  ];
+  // 池の周りの植栽
+  for (const w of WATERS) {
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      spots.push([w.left + Math.cos(a) * (w.rx + 2.4), w.top + Math.sin(a) * (w.ry + 3.0)]);
+    }
+  }
   for (const [l, t] of spots) {
     const { x, z } = toWorld(l, t);
     const tree = new THREE.Group();
@@ -370,12 +513,11 @@ scene.add(treeGroup);
 const plazaPos = (() => { const p = PLACES.find(p => p.id === 'plaza').pin; const { x, z } = toWorld(p.left, p.top); return new THREE.Vector3(x, 0, z); })();
 const plazaRing = new THREE.Mesh(
   new THREE.TorusGeometry(9, 0.18, 12, 80),
-  new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.7 })
+  new THREE.MeshBasicMaterial({ color: 0xf6c76a, transparent: true, opacity: 0.7 })
 );
 plazaRing.rotation.x = Math.PI / 2;
 plazaRing.position.copy(plazaPos).setY(0.15);
 scene.add(plazaRing);
-plazaRing.visible = false;
 
 let particles;
 {
@@ -390,10 +532,9 @@ let particles;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   particles = new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0x7dd3fc, size: 0.35, transparent: true, opacity: 0.8, depthWrite: false,
+    color: 0xf6c76a, size: 0.35, transparent: true, opacity: 0.8, depthWrite: false,
   }));
   scene.add(particles);
-  particles.visible = false;
 }
 
 // ------------------------------------------------------------
@@ -574,8 +715,8 @@ const avatar = new THREE.Group();
   avatar.userData.hereLabel = hereLabel;
 }
 scene.add(avatar);
-let avatarPlaceId = 'ent-north2';
-avatar.position.copy(PLACES.find(p => p.id === 'ent-north2')._pos);
+let avatarPlaceId = 'gate-main';
+avatar.position.copy(PLACES.find(p => p.id === 'gate-main')._pos);
 
 // ------------------------------------------------------------
 // フロア状態
@@ -583,8 +724,8 @@ avatar.position.copy(PLACES.find(p => p.id === 'ent-north2')._pos);
 //   （屋内GPSはフロアを判別できないため、フロアチップ＝自己申告。
 //     ナビ中のフロア移動・到着では自動更新される）
 // ------------------------------------------------------------
-let viewFloor = '1f';
-let userFloor = '1f';
+let viewFloor = 'campus';
+let userFloor = 'campus';
 let navMode = null; // ナビモード状態（ナビ節で使用。setViewFloorが参照するためここで宣言）
 const floorY = (fid = userFloor) => FLOORS[fid].y;
 
@@ -889,7 +1030,9 @@ function showRoute(toId, { fly = true } = {}) {
     setViewFloor(userFloor);
     const box = new THREE.Box3().setFromPoints(legs[0].points);
     const center = box.getCenter(new THREE.Vector3());
-    flyTo(center.clone().add(new THREE.Vector3(0, 60, 46)), center);
+    const span = box.getSize(new THREE.Vector3()).length();
+    const dist = Math.max(60, span * 0.9);
+    flyTo(center.clone().add(new THREE.Vector3(0, dist, dist * 0.76)), center);
   }
   return true;
 }
@@ -939,15 +1082,9 @@ function setViewFloor(fid, { alsoUser = false } = {}) {
     v.ground.material.opacity = 1;
     v.frame.visible = active;
   }
-  // 現在地ピンは「実際にいる階」を表示しているときだけ立てる
+  // 現在地ピンは「実際にいる階」を表示しているときだけ立てる（BKCは常に同一）
   avatar.visible = userFloor === viewFloor;
   if (alsoUser && !navMode) avatar.position.y = floorY();
-  document.querySelectorAll('#floor-switcher .floor-chip').forEach(b => {
-    b.classList.toggle('active', b.dataset.floor === fid);
-    b.classList.toggle('user-floor', b.dataset.floor === userFloor); // 自分がいる階の目印
-  });
-  // 別の階を見ているときは「この階にいる」自己申告ボタンを出す
-  document.getElementById('im-here').classList.toggle('hidden', viewFloor === userFloor || !!navMode);
 }
 
 // 乗換の瞬間だけ、元いたフロアをうっすら見せて上下移動を演出する
@@ -969,27 +1106,8 @@ function floorRelText(fid, base = userFloor) {
   return `${Math.abs(d)}つ${d > 0 ? '上' : '下'}の階`;
 }
 
-// フロアチップは「表示の切替」のみ。現在地の階は変えない（ピンは実際にいる階だけ）
-document.querySelectorAll('#floor-switcher .floor-chip').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const fid = btn.dataset.floor;
-    if (fid === viewFloor) return;
-    setViewFloor(fid);
-    if (!navMode) toast(`${FLOORS[fid].label} を表示中${fid === userFloor ? '' : `（現在地は ${FLOORS[userFloor].short}）`}`);
-  });
-});
-
-// 「この階にいる」＝現在地フロアの自己申告（エスカレーター等で自力移動したとき用）
-$('im-here').addEventListener('click', () => {
-  userFloor = viewFloor;
-  avatar.position.y = floorY();
-  setViewFloor(viewFloor);
-  toast(`現在地を ${FLOORS[userFloor].label} に設定しました`);
-  // ルート表示中なら新しい現在地から引き直す
-  if (currentRoute && !navMode) showRoute(currentRoute.toId, { fly: false });
-});
-
-setViewFloor('1f', { alsoUser: true }); // 初期表示は1F
+// BKCは屋外の単一マップのため、フロア切替UIは存在しない
+setViewFloor('campus', { alsoUser: true });
 
 const routePanel = $('route-panel');
 const routePanelToggle = $('route-panel-toggle');
@@ -1049,24 +1167,41 @@ function editDistance(a, b) {
   return row[b.length];
 }
 
+// 学生が実際に使う言葉で建物にたどり着けるようにするエイリアス
 const SEARCH_ALIASES = {
-  noom: 'ヌーム イタリアン', 'pelle-morbida': 'ペッレモルビダ バッグ',
-  starbucks: 'スターバックス スタバ コーヒー', 'global-style': 'グローバルスタイル スーツ',
-  'the-lab': 'ザラボ ラボ カフェラボ', 'ring-jacket': 'リングジャケット',
-  'g-shock': 'ジーショック 時計', 'tsuchiya-kaban': '土屋鞄 つちやかばん',
-  yondoshi: 'ヨンドシー 4度 ジュエリー', 'zara-home': 'ザラホーム 雑貨',
-  'il-ghiottone': 'イルギオットーネ イタリアン', tullys: 'タリーズ コーヒー カフェ',
-  soholm: 'スーホルム カフェ', actus: 'アクタス 家具 インテリア',
-  muji: 'むじるしりょうひん 無印良品 雑貨', zoff: 'ゾフ めがね', rayban: 'レイバン サングラス',
-  'seven-eleven': 'セブンイレブン コンビニ', cocokara: '薬局 ドラッグストア くすり',
-  'world-beer': 'ビール 居酒屋', 'world-wine': 'ワイン', subway: 'サブウェイ サンドイッチ',
-  'suntory-whisky-house': 'サントリー ウイスキー バー', 'au-style': 'エーユー 携帯 スマホ',
-  softbank: 'ソフトバンク ワイモバイル 携帯 スマホ', iori: 'いおり 今治タオル',
-  samsonite: 'サムソナイト スーツケース', 'sense-of-place': 'アーバンリサーチ',
-  'seiko-boutique': 'セイコー 時計', 'lables-one': '美容室 ヘアサロン まつげ',
-  icure: '接骨院 マッサージ 鍼灸', eyecity: 'アイシティ コンタクト',
-  'orix-rentacar': 'オリックス レンタカー', hakuyosya: 'はくようしゃ クリーニング',
-  'mitsui-atm': '銀行 エーティーエム', 'umekita-ganka': '眼科 めがね処方',
+  media: 'としょかん 図書館 ライブラリー ぴあら 自習 勉強',
+  union: 'しょくどう 食堂 学食 生協 ランチ ごはん コンビニ ショップ ユニオン',
+  link: 'しょくどう 食堂 学食 書籍 本屋 ランチ リンスク 生命科学部事務室',
+  ccube: 'しょくどう 食堂 レストラン ナデシコ ランチ',
+  prism: 'きょうしつ 教室 キャリアセンター 就活 プリズムホール プリズム',
+  forest: 'きょうしつ 教室 フォレスト',
+  across: 'ぴあら レインボー RAINBOW サービスデスク パソコン 教職 アクロス',
+  colearn1: 'コラいち 演習室 パソコン',
+  colearn2: 'コラに 実習室',
+  adseminario: 'まなびステーション 学びステーション 履修 成績 経済学部 食マネジメント スポーツ健康科学部 事務室 アドセミ',
+  'central-arc': '学生オフィス 奨学金 サークル BBP 国際 留学 障害学生支援 サポート',
+  'core-station': '理工学部事務室 証明書 落とし物 キャンパス管理 保育園',
+  'west-wing': '保健センター 医務室 体調 けが 診察',
+  'east-wing': '研究室 実験',
+  science: '薬学部事務室 研究室',
+  gym: 'たいいくかん 体育館 ジム アリーナ トレーニング 部活',
+  'sports-commons': 'プール 知るカフェ アリーナ トレーニング スポコモ',
+  quince: 'スタジアム 陸上 クインス 競技場',
+  'athlete-gym': 'トレーニング 強化',
+  'green-field': 'ラグビー アメフト 人工芝',
+  canopy: 'バス 定期券 近江鉄道',
+  epoch: 'セミナー 合宿 宿泊 エポック',
+  'act-alpha': 'サークル 部室',
+  'act-mu': 'サークル 部室 音楽 バンド 軽音',
+  'act-beta': 'サークル 部室',
+  'act-sigma': 'サークル 部室',
+  rohm: '会議室 ローム',
+  'intl-house': '寮 留学生 アイハウス',
+  grassroots: '起業 コワーキング ファブ 3Dプリンタ',
+  incubator: '起業 スタートアップ',
+  workshop: '工作 ものづくり 実習',
+  tricea: '研究室',
+  biolink: '研究室 サークルルーム',
 };
 
 function searchScore(shop, query) {
@@ -1101,7 +1236,7 @@ function renderShopList(filter = '', cat = 'all') {
     .filter(result => Number.isFinite(result.score))
     .sort((a, b) => a.score - b.score || a.shop.name.localeCompare(b.shop.name, 'ja'));
   if (!results.length) {
-    list.innerHTML = '<div class="search-empty">近い店舗が見つかりませんでした<br><small>店舗名・カテゴリ・「カフェ」などで検索できます</small></div>';
+    list.innerHTML = '<div class="search-empty">近い施設が見つかりませんでした<br><small>建物名・「食堂」「図書館」「教室」などで検索できます</small></div>';
     return;
   }
   for (const { shop: s } of results) {
@@ -1109,8 +1244,8 @@ function renderShopList(filter = '', cat = 'all') {
     div.className = 'shop-item';
     div.innerHTML = `
       <img class="thumb" src="${s.logo}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
-      <div class="meta"><b>${esc(s.name)}</b><span><i class="floor-badge">${esc(FLOORS[s.floor].short)}${s.floor === userFloor ? '' : '・' + esc(floorRelText(s.floor))}</i>${esc(s.tag)}</span></div>
-      <button class="shop-info-btn" type="button" title="店舗情報">ⓘ</button>`;
+      <div class="meta"><b>${esc(s.name)}</b><span>${s.no != null ? `<i class="floor-badge">${s.no}</i>` : ''}${esc(s.tag)}</span></div>
+      <button class="shop-info-btn" type="button" title="施設情報">ⓘ</button>`;
     // 行タップ1回で経路案内まで直行（店舗情報はⓘから）
     div.addEventListener('click', (event) => {
       if (event.target.closest('.shop-info-btn')) return;
@@ -1197,7 +1332,7 @@ $('card-goto').addEventListener('click', () => {
 function focusShop(shop) {
   if (shop.floor !== viewFloor) setViewFloor(shop.floor); // 表示だけ切替（現在地フロアは維持）
   const p = shop._pos;
-  flyTo(p.clone().add(new THREE.Vector3(0, 26, 24)), p.clone().add(new THREE.Vector3(0, 2, 0)));
+  flyTo(p.clone().add(new THREE.Vector3(0, 34, 30)), p.clone().add(new THREE.Vector3(0, 2, 0)));
 }
 
 // ------------------------------------------------------------
@@ -1239,8 +1374,8 @@ addEventListener('pointerdown', () => startGeolocation(), { once: true });
 // ------------------------------------------------------------
 // ナビモード（GPS追従。追従(三人称)/俯瞰をワンタップ切替、逸脱時は自動リルート）
 // ------------------------------------------------------------
-const NAV_OFFROUTE_DIST = 6;  // 経路逸脱とみなす距離（≈10m: 屋内GPS誤差を考慮）
-const NAV_ARRIVE_DIST = 5;    // 到着とみなす距離（≈8m）
+const NAV_OFFROUTE_DIST = 5;  // 経路逸脱とみなす距離（≈20m: 屋外GPS誤差を考慮）
+const NAV_ARRIVE_DIST = 4;    // 到着とみなす距離（≈16m）
 // navMode: { view, heading, headingOffset, zoom, samples, goal, len, rerouteAt }（宣言はフロア状態節）
 
 addEventListener('keydown', (e) => { if (e.key === 'Escape') exitNav(false); });
@@ -1317,7 +1452,7 @@ function exitNav(arrived = false) {
   avatar.userData.hereLabel.visible = true;
   controls.enabled = true;
   const target = avatar.position.clone().setY(0);
-  flyTo(target.clone().add(new THREE.Vector3(0, 55, 42)), target, 1.1);
+  flyTo(target.clone().add(new THREE.Vector3(0, 64, 50)), target, 1.1);
   if (arrived) {
     avatarPlaceId = currentRoute?.toId ?? avatarPlaceId;
     clearRoute();
@@ -1520,8 +1655,8 @@ function animate() {
   // 視点に応じた情報量の最適化（Overview / Area / Detail）
   const viewDistance = camera.position.distanceTo(controls.target);
   const viewAngle = controls.getPolarAngle();
-  const detailView = viewDistance < 48 && viewAngle < 1.12;
-  const areaView = viewDistance < 74;
+  const detailView = viewDistance < 70 && viewAngle < 1.12;
+  const areaView = viewDistance < 130;
   for (const s of SHOPS) {
     const on = s._categoryVisible && s.floor === viewFloor; // 表示中フロアのみ描画
     const selected = cardShop === s || hovered === s._mesh;
@@ -1543,7 +1678,7 @@ function animate() {
     s._crown.material.transparent = true;
     s._crown.material.opacity = selected ? 1 : detailView ? 0.82 : 0.46;
     s._mesh.material.opacity = on
-      ? (selected ? 0.56 : detailView ? 0.38 : areaView ? 0.24 : 0.1)
+      ? (selected ? 0.75 : detailView ? 0.58 : areaView ? 0.48 : 0.34)
       : 0.015;
   }
   $('zoom-hint').classList.toggle('hidden', areaView);
@@ -1636,20 +1771,23 @@ canvas.addEventListener('webglcontextrestored', () => {
 // 起動
 animate();
 
-// 起動時に現在階を選ばせ、それを出発フロアにする
-function chooseStartFloor(fid) {
-  setViewFloor(fid, { alsoUser: true });
+// 起動時に「いまいる場所」を選ばせ、案内の出発地点にする
+function chooseStartPlace(placeId) {
+  const p = PLACES.find(pl => pl.id === placeId) ?? PLACES[0];
+  avatarPlaceId = p.id;
+  avatar.position.copy(p._pos);
+  setViewFloor('campus', { alsoUser: true });
   $('floor-picker').classList.add('hidden');
-  toast(`現在地を ${FLOORS[fid].label} に設定しました。目的地を検索してみましょう`);
+  toast(`出発地点を「${p.name}」に設定しました。目的地を検索してみましょう`);
 }
 document.querySelectorAll('.floor-picker-btn').forEach(btn =>
-  btn.addEventListener('click', () => chooseStartFloor(btn.dataset.floor)));
-$('floor-picker-skip').addEventListener('click', () => chooseStartFloor('1f'));
+  btn.addEventListener('click', () => chooseStartPlace(btn.dataset.start)));
+$('floor-picker-skip').addEventListener('click', () => chooseStartPlace('gate-main'));
 
 setTimeout(() => {
   $('loader').classList.add('done');
-  $('floor-picker').classList.remove('hidden'); // まず現在階を選択
+  $('floor-picker').classList.remove('hidden'); // まず出発地点を選択
   // オープニングカメラ演出
-  camera.position.set(-70, 120, 130);
-  flyTo(new THREE.Vector3(0, 54, 64), new THREE.Vector3(0, 0, -2), 2.4);
+  camera.position.set(-120, 180, 200);
+  flyTo(new THREE.Vector3(0, 96, 108), new THREE.Vector3(0, 0, -4), 2.4);
 }, 600);
