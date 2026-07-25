@@ -11,6 +11,7 @@ import { startAR } from './ar.js';
 
 const METER_PER_UNIT = 4; // 1ワールド単位 ≈ 4m（キャンパス全幅 ≈ 680m）
 const isMobileDevice = matchMedia('(max-width: 640px), (pointer: coarse)').matches;
+const prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ------------------------------------------------------------
 // 基本セットアップ
@@ -1050,6 +1051,13 @@ function showRoute(toId, { fly = true } = {}) {
 // ------------------------------------------------------------
 let camTween = null;
 function flyTo(camPos, target, dur = 1.4) {
+  if (prefersReducedMotion) {
+    camTween = null;
+    camera.position.copy(camPos);
+    controls.target.copy(target);
+    controls.update();
+    return;
+  }
   camTween = {
     t: 0, dur,
     fromPos: camera.position.clone(), toPos: camPos,
@@ -1075,6 +1083,31 @@ function toast(msg, ms = 2600) {
   el.classList.remove('hidden');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add('hidden'), ms);
+}
+
+function focusableElements(container) {
+  return [...container.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )].filter(el => !el.hidden && el.getClientRects().length);
+}
+
+function trapTabKey(container, event) {
+  if (event.key !== 'Tab') return;
+  const focusable = focusableElements(container);
+  if (!focusable.length) {
+    event.preventDefault();
+    container.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 // ------------------------------------------------------------
@@ -1173,8 +1206,39 @@ function arRouteLeg() {
 }
 
 // ドロワー
-$('btn-list').addEventListener('click', () => $('drawer').classList.toggle('open'));
-$('drawer-close').addEventListener('click', () => $('drawer').classList.remove('open'));
+const drawer = $('drawer');
+const drawerBackdrop = $('drawer-backdrop');
+let drawerReturnFocus = null;
+
+function openDrawer({ focusSearch = true } = {}) {
+  if (drawer.classList.contains('open')) return;
+  drawerReturnFocus = document.activeElement;
+  drawer.inert = false;
+  drawer.setAttribute('aria-hidden', 'false');
+  drawer.classList.add('open');
+  drawerBackdrop.hidden = false;
+  $('btn-list').setAttribute('aria-expanded', 'true');
+  document.body.classList.add('drawer-open');
+  if (focusSearch) setTimeout(() => $('search').focus(), prefersReducedMotion ? 0 : 180);
+}
+
+function closeDrawer({ restoreFocus = true } = {}) {
+  if (!drawer.classList.contains('open')) return;
+  drawer.classList.remove('open');
+  drawer.setAttribute('aria-hidden', 'true');
+  drawer.inert = true;
+  drawerBackdrop.hidden = true;
+  $('btn-list').setAttribute('aria-expanded', 'false');
+  document.body.classList.remove('drawer-open');
+  if (restoreFocus && drawerReturnFocus?.isConnected) drawerReturnFocus.focus();
+}
+
+$('btn-list').addEventListener('click', () => {
+  if (drawer.classList.contains('open')) closeDrawer();
+  else openDrawer();
+});
+$('drawer-close').addEventListener('click', () => closeDrawer());
+drawerBackdrop.addEventListener('click', () => closeDrawer());
 
 function normalizeSearch(value) {
   return value.normalize('NFKC').toLowerCase()
@@ -1319,7 +1383,7 @@ function appendStudentHome(list) {
 
   const heading = document.createElement('div');
   heading.className = 'list-section-title facilities-title';
-  heading.innerHTML = '<span>すべての施設</span><small>タップしてルート表示</small>';
+  heading.innerHTML = `<span>すべての施設</span><small>${SHOPS.length}件・タップしてルート表示</small>`;
   list.appendChild(heading);
 }
 
@@ -1333,41 +1397,53 @@ function renderShopList(filter = '', cat = 'all') {
     .filter(result => Number.isFinite(result.score))
     .sort((a, b) => a.score - b.score || a.shop.name.localeCompare(b.shop.name, 'ja'));
   if (!results.length) {
-    list.innerHTML = '<div class="search-empty">近い施設が見つかりませんでした<br><small>建物名・「食堂」「図書館」「教室」などで検索できます</small></div>';
+    list.innerHTML = '<div class="search-empty" role="status"><b>該当する施設がありません</b><br><small>通称を短くするか、「食堂」「図書館」「教室」などで検索してください</small></div>';
     return;
   }
+  if (filter || cat !== 'all') {
+    const summary = document.createElement('div');
+    summary.className = 'result-summary';
+    summary.setAttribute('role', 'status');
+    summary.setAttribute('aria-live', 'polite');
+    summary.textContent = `${results.length}件の施設`;
+    list.appendChild(summary);
+  }
   for (const { shop: s } of results) {
-    const div = document.createElement('div');
-    div.className = 'shop-item';
-    div.innerHTML = `
-      <img class="thumb" src="${s.logo}" alt="" loading="lazy">
-      <div class="meta"><b>${esc(s.name)}</b><span>${s.no != null ? `<i class="floor-badge">${s.no}</i>` : ''}${esc(s.tag)}</span></div>
-      <button class="shop-info-btn" type="button" title="施設情報">ⓘ</button>`;
+    const row = document.createElement('div');
+    row.className = 'shop-item';
+    row.innerHTML = `
+      <button class="shop-main-btn" type="button" aria-label="${esc(s.name)}までのルートを表示">
+        <img class="thumb" src="${s.logo}" alt="" loading="lazy">
+        <span class="meta"><b>${esc(s.name)}</b><span>${s.no != null ? `<i class="floor-badge">${s.no}</i>` : ''}${esc(s.tag)}</span></span>
+      </button>
+      <button class="shop-info-btn" type="button" aria-label="${esc(s.name)}の施設情報を表示" title="施設情報">
+        <svg aria-hidden="true"><use href="#i-info"/></svg>
+      </button>`;
     // インラインonerrorはCSPで禁止しているため、リスナーで読み込み失敗を処理する
-    div.querySelector('.thumb').addEventListener('error', (e) => { e.target.style.visibility = 'hidden'; });
-    // 行タップ1回で経路案内まで直行（店舗情報はⓘから）
-    div.addEventListener('click', (event) => {
-      if (event.target.closest('.shop-info-btn')) return;
-      startGuidanceTo(s);
+    row.querySelector('.thumb').addEventListener('error', (e) => { e.target.style.visibility = 'hidden'; });
+    row.querySelector('.shop-main-btn').addEventListener('click', () => startGuidanceTo(s));
+    row.querySelector('.shop-info-btn').addEventListener('click', () => {
+      closeDrawer({ restoreFocus: false });
+      openCard(s);
+      focusShop(s);
     });
-    div.querySelector('.shop-info-btn').addEventListener('click', (event) => {
-      event.stopPropagation();
-      openCard(s); focusShop(s); $('drawer').classList.remove('open');
-    });
-    list.appendChild(div);
+    list.appendChild(row);
   }
 }
 renderShopList();
 $('search').addEventListener('input', (e) => renderShopList(e.target.value, activeCat));
 
 $('quick-destination').addEventListener('click', () => {
-  $('drawer').classList.add('open');
   $('search').value = '';
   activeCat = 'all';
-  document.querySelectorAll('.filter-chip').forEach(b => b.classList.toggle('active', b.dataset.cat === 'all'));
+  document.querySelectorAll('.filter-chip').forEach(b => {
+    const selected = b.dataset.cat === 'all';
+    b.classList.toggle('active', selected);
+    b.setAttribute('aria-pressed', String(selected));
+  });
   SHOPS.forEach(s => { s._categoryVisible = true; });
   renderShopList('', 'all');
-  setTimeout(() => $('search').focus(), 280);
+  openDrawer();
 });
 addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -1380,8 +1456,11 @@ addEventListener('keydown', (event) => {
 let activeCat = 'all';
 document.querySelectorAll('.filter-chip').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+    document.querySelectorAll('.filter-chip').forEach(b => {
+      const selected = b === btn;
+      b.classList.toggle('active', selected);
+      b.setAttribute('aria-pressed', String(selected));
+    });
     activeCat = btn.dataset.cat;
     renderShopList($('search').value, activeCat);
     for (const s of SHOPS) {
@@ -1393,8 +1472,10 @@ document.querySelectorAll('.filter-chip').forEach(btn => {
 
 // ショップカード
 let cardShop = null;
+let cardReturnFocus = null;
 function openCard(shop) {
   if (document.body.classList.contains('nav-active')) return;
+  cardReturnFocus = document.activeElement;
   recordRecentShop(shop);
   cardShop = shop;
   $('card-logo-img').src = shop.logo;
@@ -1409,24 +1490,26 @@ function openCard(shop) {
   document.body.classList.add('detail-active');
   routePanel.classList.add('card-covered');
   $('map-controls').classList.add('hidden');
+  setTimeout(() => $('card-close').focus(), prefersReducedMotion ? 0 : 80);
 }
-function closeCard() {
+function closeCard({ restoreFocus = true } = {}) {
+  if ($('shop-card').classList.contains('hidden')) return;
   $('shop-card').classList.add('hidden');
   document.body.classList.remove('detail-active');
   routePanel.classList.remove('card-covered');
   $('map-controls').classList.remove('hidden');
+  if (restoreFocus && cardReturnFocus?.isConnected) cardReturnFocus.focus();
 }
 $('card-close').addEventListener('click', (event) => {
   event.stopPropagation();
   closeCard();
 });
-addEventListener('keydown', (event) => { if (event.key === 'Escape') closeCard(); });
 
 function startGuidanceTo(shop) {
   if (!showRoute(shop.id)) return;
   recordRecentShop(shop);
-  closeCard();
-  $('drawer').classList.remove('open');
+  closeCard({ restoreFocus: false });
+  closeDrawer({ restoreFocus: false });
   setRoutePanelCollapsed(false);
   toast(`「${shop.name}」までの経路を表示しました`);
 }
@@ -1466,7 +1549,7 @@ function geoStatusText() {
 function updateGeoChip() {
   $('nav-gps').querySelector('span').textContent = geoStatusText();
 }
-function startGeolocation() {
+function startGeolocation({ silentError = false } = {}) {
   if (geoState.watchId != null || !('geolocation' in navigator)) return;
   geoState.watchId = navigator.geolocation.watchPosition((pos) => {
     const { latitude, longitude, heading, accuracy } = pos.coords;
@@ -1483,22 +1566,19 @@ function startGeolocation() {
       ? THREE.MathUtils.degToRad(heading) : null;
     updateGeoChip();
   }, () => {
-    toast('位置情報を取得できませんでした。ブラウザ設定で位置情報を許可してください');
+    if (geoState.watchId != null) navigator.geolocation.clearWatch(geoState.watchId);
+    geoState.watchId = null;
+    if (!silentError) toast('位置情報を取得できませんでした。ブラウザ設定で位置情報を許可してください');
     updateGeoChip();
   }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 });
   updateGeoChip();
 }
-// 起動直後の許可ダイアログを避け、最初の画面タップで位置情報の利用を開始
-addEventListener('pointerdown', () => startGeolocation(), { once: true });
-
 // ------------------------------------------------------------
 // ナビモード（GPS追従。追従(三人称)/俯瞰をワンタップ切替、逸脱時は自動リルート）
 // ------------------------------------------------------------
 const NAV_OFFROUTE_DIST = 5;  // 経路逸脱とみなす距離（≈20m: 屋外GPS誤差を考慮）
 const NAV_ARRIVE_DIST = 4;    // 到着とみなす距離（≈16m）
 // navMode: { view, heading, headingOffset, zoom, samples, goal, len, rerouteAt }（宣言はフロア状態節）
-
-addEventListener('keydown', (e) => { if (e.key === 'Escape') exitNav(false); });
 
 // ナビ中の見回し（1本指ドラッグ=回転 / ピンチ=ズーム / ホイール=ズーム）
 const navPointers = new Map();
@@ -1558,8 +1638,8 @@ function startNav() {
   setControlIcon('nav-view', 'overview', '俯瞰');
   updateGeoChip();
   setRoutePanelCollapsed(true);
-  closeCard();
-  $('drawer').classList.remove('open');
+  closeCard({ restoreFocus: false });
+  closeDrawer({ restoreFocus: false });
 }
 
 function exitNav(arrived = false) {
@@ -1740,7 +1820,7 @@ canvas.addEventListener('pointerup', (e) => {
     focusShop(shop);
   } else if (!$('shop-card').classList.contains('hidden')) {
     // 店情報カードを開いている状態で地図の何もない場所をタップ → 地図に戻る
-    closeCard();
+    closeCard({ restoreFocus: false });
   } else if (!routePanel.classList.contains('collapsed')) {
     // 経路パネルが開いた状態で地図の何もない場所をタップ → パネルを畳んでマップをメインに
     setRoutePanelCollapsed(true);
@@ -1771,6 +1851,7 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
   const t = clock.elapsedTime;
+  const motionT = prefersReducedMotion ? 0 : t;
 
   // 視点に応じた情報量の最適化（Overview / Area / Detail）
   const viewDistance = camera.position.distanceTo(controls.target);
@@ -1806,13 +1887,15 @@ function animate() {
 
   // ラベル浮遊（ごく控えめに）
   for (const l of labelSprites) {
-    if (l.userData.baseY != null) l.position.y = l.userData.baseY + Math.sin(t * 1.1 + l.userData.phase) * 0.12;
+    if (l.userData.baseY != null) {
+      l.position.y = l.userData.baseY + (prefersReducedMotion ? 0 : Math.sin(motionT * 1.1 + l.userData.phase) * 0.12);
+    }
   }
 
   // プラザ演出
-  plazaRing.scale.setScalar(1 + Math.sin(t * 1.2) * 0.04);
-  plazaRing.material.opacity = 0.5 + Math.sin(t * 1.2) * 0.2;
-  if (particles) {
+  plazaRing.scale.setScalar(1 + Math.sin(motionT * 1.2) * 0.04);
+  plazaRing.material.opacity = 0.5 + Math.sin(motionT * 1.2) * 0.2;
+  if (particles && !prefersReducedMotion) {
     const arr = particles.geometry.attributes.position.array;
     for (let i = 1; i < arr.length; i += 3) {
       arr[i] += dt * 1.2;
@@ -1824,13 +1907,13 @@ function animate() {
   // 経路の矢印を流す（各レッグは自フロアの高さで流れる）
   if (currentRoute) {
     for (const dot of routeDots) {
-      const u = (dot.userData.offset + t * 0.055) % 1;
+      const u = (dot.userData.offset + motionT * 0.055) % 1;
       dot.position.copy(dot.userData.curve.getPointAt(u)).setY(dot.userData.baseY + 0.88);
-      const pulse = 0.88 + Math.sin(t * 4 + dot.userData.offset * 18) * 0.18;
+      const pulse = 0.88 + Math.sin(motionT * 4 + dot.userData.offset * 18) * 0.18;
       dot.scale.setScalar(pulse);
     }
     for (const cone of routeArrows) {
-      const u = (cone.userData.offset + t * 0.06) % 1;
+      const u = (cone.userData.offset + motionT * 0.06) % 1;
       const p = cone.userData.curve.getPointAt(u);
       const tan = cone.userData.curve.getTangentAt(u);
       cone.position.copy(p).setY(cone.userData.baseY + 0.9);
@@ -1899,12 +1982,8 @@ animate();
 //   スナップショット共有のためサーバー不要（リンクを渡した相手にしか伝わらない）。
 // ------------------------------------------------------------
 function shareMyLocation() {
-  if (geoState.lat == null) {
-    startGeolocation();
-    toast('現在地を取得中です。少し待ってからもう一度押してください');
-    return;
-  }
-  const name = (prompt('相手に表示する名前（省略可）') ?? '').trim().slice(0, 12);
+  if (geoState.lat == null) return false;
+  const name = $('share-name').value.trim().slice(0, 12);
   const url = new URL(location.href);
   url.search = '';
   url.searchParams.set('meet', `${geoState.lat.toFixed(6)},${geoState.lng.toFixed(6)}`);
@@ -1925,20 +2004,100 @@ function shareMyLocation() {
   } else {
     copyLink();
   }
+  return true;
 }
 // 共有ボタン → 共有方法の選択シート（1回きりのリンク or ライブ共有）
-$('btn-share').addEventListener('click', () => $('share-sheet').classList.remove('hidden'));
-$('share-cancel').addEventListener('click', () => $('share-sheet').classList.add('hidden'));
+const shareSheet = $('share-sheet');
+const shareMethodView = $('share-method-view');
+const shareSnapshotView = $('share-snapshot-view');
+const shareSendButton = $('share-send');
+let shareReturnFocus = null;
+let shareRequestId = 0;
+
+function setShareView(view) {
+  const snapshot = view === 'snapshot';
+  shareMethodView.hidden = snapshot;
+  shareSnapshotView.hidden = !snapshot;
+  $('share-form-status').textContent = '';
+  $('share-form-status').classList.remove('error');
+  setTimeout(() => (snapshot ? $('share-name') : $('share-snapshot')).focus(), prefersReducedMotion ? 0 : 70);
+}
+
+function openShareSheet() {
+  shareReturnFocus = document.activeElement;
+  setShareView('methods');
+  shareSheet.classList.remove('hidden');
+  setTimeout(() => $('share-snapshot').focus(), prefersReducedMotion ? 0 : 80);
+}
+
+function closeShareSheet({ restoreFocus = true } = {}) {
+  if (shareSheet.classList.contains('hidden')) return;
+  shareRequestId++;
+  shareSheet.classList.add('hidden');
+  if (restoreFocus && shareReturnFocus?.isConnected) shareReturnFocus.focus();
+}
+
+$('btn-share').addEventListener('click', openShareSheet);
+$('share-close').addEventListener('click', () => closeShareSheet());
 $('share-sheet').addEventListener('click', (e) => {
-  if (e.target.id === 'share-sheet') $('share-sheet').classList.add('hidden');
+  if (e.target.id === 'share-sheet') closeShareSheet();
 });
-$('share-snapshot').addEventListener('click', () => {
-  $('share-sheet').classList.add('hidden');
+$('share-snapshot').addEventListener('click', () => setShareView('snapshot'));
+$('share-back').addEventListener('click', () => setShareView('methods'));
+
+async function waitForSharePosition(ms = 8000) {
+  if (geoState.lat != null) return true;
+  startGeolocation({ silentError: true });
+  const started = performance.now();
+  while (performance.now() - started < ms) {
+    if (geoState.lat != null) return true;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
+$('share-snapshot-view').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (shareSendButton.disabled) return;
+  const label = shareSendButton.querySelector('span');
+  const status = $('share-form-status');
+  shareSendButton.disabled = true;
+  shareSendButton.setAttribute('aria-busy', 'true');
+  label.textContent = '現在地を取得中…';
+  status.textContent = 'ブラウザの位置情報を許可してください。';
+  status.classList.remove('error');
+
+  const requestId = ++shareRequestId;
+  const ready = await waitForSharePosition();
+  shareSendButton.disabled = false;
+  shareSendButton.removeAttribute('aria-busy');
+  label.textContent = '現在地リンクを作成';
+  if (requestId !== shareRequestId) return;
+  if (!ready) {
+    status.textContent = '現在地を取得できませんでした。ブラウザ設定で位置情報を許可して、もう一度お試しください。';
+    status.classList.add('error');
+    return;
+  }
+  closeShareSheet({ restoreFocus: false });
   shareMyLocation();
 });
+
 $('share-live').addEventListener('click', () => {
-  $('share-sheet').classList.add('hidden');
+  closeShareSheet({ restoreFocus: false });
   startLiveShare();
+});
+
+addEventListener('keydown', (event) => {
+  if (event.key === 'Tab') {
+    if (!shareSheet.classList.contains('hidden')) trapTabKey(shareSheet, event);
+    else if (drawer.classList.contains('open')) trapTabKey(drawer, event);
+    return;
+  }
+  if (event.key !== 'Escape') return;
+  if (!shareSheet.classList.contains('hidden')) closeShareSheet();
+  else if (drawer.classList.contains('open')) closeDrawer();
+  else if (!$('shop-card').classList.contains('hidden')) closeCard();
+  else if (navMode) exitNav(false);
 });
 
 // ライブ共有（Firebase）は使うときだけ動的読み込み。通常利用者のペイロードに影響しない
@@ -1947,8 +2106,11 @@ async function startLiveShare(code = null) {
   if (liveShareLoading) return;
   liveShareLoading = true;
   try {
-    const m = await import('./live.js');
-    await m.initLive({ scene, geoState, startGeolocation, toast, showRoute, PLACES, nearestNode, makeLabelSprite, isMobileDevice }, code);
+    const m = await import('./live.js?v=20260728k');
+    await m.initLive({
+      scene, geoState, startGeolocation, toast, showRoute, PLACES, nearestNode,
+      makeLabelSprite, isMobileDevice, openShareSheet,
+    }, code);
   } catch (e) {
     console.warn('live share load failed', e);
     toast('ライブ共有を読み込めませんでした（通信環境をご確認ください）');
@@ -2012,9 +2174,9 @@ function setupMeetPoint() {
 }
 const meetPoint = setupMeetPoint();
 
-// ---- 起動: すぐにGPSを取得し、現在地から案内を開始する（選択画面なし） ----
-//   取得できない・キャンパス外の場合は正門を出発地点にして続行する。
-//   その後もwatchPositionが動き続けるため、遅れて測位できれば自動で現在地に追従する。
+// ---- 起動: 位置情報が「許可済み」の場合だけ自動で現在地へ移動 ----
+//   未選択・拒否状態では起動時に許可を要求しない。現在地・ナビ・共有など、
+//   位置情報を必要とする操作を選んだ時点で初めてブラウザへ許可を要求する。
 function waitForGpsFix(ms) {
   return new Promise((resolve) => {
     const t0 = performance.now();
@@ -2026,7 +2188,14 @@ function waitForGpsFix(ms) {
 }
 
 async function initStartLocation() {
-  startGeolocation();
+  if (!('geolocation' in navigator) || !navigator.permissions?.query) return false;
+  try {
+    const permission = await navigator.permissions.query({ name: 'geolocation' });
+    if (permission.state !== 'granted') return false;
+  } catch {
+    return false;
+  }
+  startGeolocation({ silentError: true });
   const ok = await waitForGpsFix(9000);
   if (ok) {
     avatar.position.set(geoState.world.x, 0, geoState.world.z);
@@ -2034,9 +2203,8 @@ async function initStartLocation() {
     toast('現在地から案内します');
   } else if (geoState.lat != null) {
     toast('キャンパス外のため、出発地点を正門にしています');
-  } else {
-    toast('位置情報が使えないため、出発地点を正門にしています');
   }
+  return ok;
 }
 
 // 現地測量モード（?survey）— 通常利用者のペイロードに影響しないよう動的読み込み
@@ -2048,7 +2216,7 @@ if (new URLSearchParams(location.search).has('survey')) {
 
 setTimeout(() => {
   $('loader').classList.add('done');
-  // オープニングカメラ演出 → GPS取得
+  // オープニングカメラ演出 → 許可済みの場合のみGPS取得
   camera.position.set(-120, 180, 200);
   flyTo(new THREE.Vector3(0, 96, 108), new THREE.Vector3(0, 0, -4), 2.4);
   initStartLocation().then(() => {

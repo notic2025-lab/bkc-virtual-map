@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>立命館大学BKC バーチャルキャンパスマップ | Ritsumeikan BKC</title>
 <meta name="description" content="立命館大学びわこ・くさつキャンパス（BKC）の3Dバーチャルマップ。建物検索・最短経路案内・GPSナビ・ARナビ対応。">
 <!-- CSP: 自ホスト＋Firebase/gstatic のみ許可（XSS・不正スクリプト実行の被害を限定する）。
@@ -11,7 +11,7 @@
 <meta name="theme-color" content="#f5f3ee">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%239d1535'/><text x='50' y='56' font-family='Georgia,serif' font-size='58' font-weight='700' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'>R</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260728f">
+<link rel="stylesheet" href="css/style.css?v=20260728k">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -37,10 +37,16 @@
   <symbol id="i-next" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
   <symbol id="i-turn" viewBox="0 0 24 24"><path d="m12 3 6 7h-4v6a5 5 0 0 1-5 5H6v-4h3a1 1 0 0 0 1-1v-6H6z"/></symbol>
   <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 14V4M12 4 8.5 7.5M12 4l3.5 3.5"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.1"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19v-1.5A4.5 4.5 0 0 1 8 13h2a4.5 4.5 0 0 1 4.5 4.5V19"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14h1a4 4 0 0 1 4 4v1"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
 </svg>
 
 <div id="app">
-  <canvas id="scene"></canvas>
+  <canvas id="scene" role="img" aria-label="立命館大学BKCの3Dキャンパスマップ。施設検索と経路案内は画面上部の検索から利用できます。">
+    立命館大学BKCのキャンパスマップです。お使いのブラウザでは3D地図を表示できません。
+  </canvas>
   <div class="world-atmosphere" aria-hidden="true"></div>
 
   <!-- ブランド・検索 -->
@@ -56,28 +62,28 @@
       <svg class="sb-search" aria-hidden="true"><use href="#i-search"/></svg>
       <span class="sb-text"><b>目的地を検索</b><small>棟名・通称・施設名から</small></span>
     </button>
-    <button id="btn-list" class="round-btn" type="button" title="施設一覧" aria-label="施設一覧"><svg><use href="#i-grid"/></svg></button>
+    <button id="btn-list" class="round-btn" type="button" title="施設一覧" aria-label="施設一覧を開く" aria-controls="drawer" aria-expanded="false"><svg><use href="#i-grid"/></svg></button>
   </header>
 
   <!-- カテゴリフィルタ -->
-  <div id="filters">
-    <button class="filter-chip active" data-cat="all">すべて</button>
-    <button class="filter-chip" data-cat="lecture"><i style="background:#58759a"></i>授業・自習</button>
-    <button class="filter-chip" data-cat="food"><i style="background:#b37b2d"></i>食堂・カフェ</button>
-    <button class="filter-chip" data-cat="admin"><i style="background:#a43850"></i>履修・相談</button>
-    <button class="filter-chip" data-cat="research"><i style="background:#4f8179"></i>研究・実験棟</button>
-    <button class="filter-chip" data-cat="sports"><i style="background:#63815d"></i>スポーツ</button>
-    <button class="filter-chip" data-cat="circle"><i style="background:#805c78"></i>課外・サークル</button>
-    <button class="filter-chip" data-cat="life"><i style="background:#707b82"></i>生活・設備</button>
+  <div id="filters" role="group" aria-label="施設カテゴリ">
+    <button class="filter-chip active" data-cat="all" aria-pressed="true">すべて</button>
+    <button class="filter-chip" data-cat="lecture" aria-pressed="false"><i style="background:#58759a"></i>授業・自習</button>
+    <button class="filter-chip" data-cat="food" aria-pressed="false"><i style="background:#b37b2d"></i>食堂・カフェ</button>
+    <button class="filter-chip" data-cat="admin" aria-pressed="false"><i style="background:#a43850"></i>履修・相談</button>
+    <button class="filter-chip" data-cat="research" aria-pressed="false"><i style="background:#4f8179"></i>研究・実験棟</button>
+    <button class="filter-chip" data-cat="sports" aria-pressed="false"><i style="background:#63815d"></i>スポーツ</button>
+    <button class="filter-chip" data-cat="circle" aria-pressed="false"><i style="background:#805c78"></i>課外・サークル</button>
+    <button class="filter-chip" data-cat="life" aria-pressed="false"><i style="background:#707b82"></i>生活・設備</button>
   </div>
 
   <!-- 地図操作 -->
-  <div id="map-controls" aria-label="地図操作">
-    <button id="btn-north" type="button" title="北を上に戻す"><svg><use href="#i-north"/></svg><small>北</small></button>
-    <button id="btn-locate" type="button" title="現在地を中央に表示"><svg><use href="#i-gps"/></svg></button>
-    <button id="btn-share" type="button" title="自分の位置を友達に送る"><svg><use href="#i-share"/></svg></button>
-    <button id="btn-zoom-in" type="button" title="拡大"><svg><use href="#i-plus"/></svg></button>
-    <button id="btn-zoom-out" type="button" title="縮小"><svg><use href="#i-minus"/></svg></button>
+  <div id="map-controls" role="group" aria-label="地図操作">
+    <button id="btn-north" type="button" title="北を上に戻す" aria-label="北を上に戻す"><svg><use href="#i-north"/></svg><small>北</small></button>
+    <button id="btn-locate" type="button" title="現在地を中央に表示" aria-label="現在地を中央に表示"><svg><use href="#i-gps"/></svg></button>
+    <button id="btn-share" type="button" title="自分の位置を友達に送る" aria-label="位置を友達に共有"><svg><use href="#i-share"/></svg></button>
+    <button id="btn-zoom-in" type="button" title="拡大" aria-label="地図を拡大"><svg><use href="#i-plus"/></svg></button>
+    <button id="btn-zoom-out" type="button" title="縮小" aria-label="地図を縮小"><svg><use href="#i-minus"/></svg></button>
   </div>
   <div id="zoom-hint"><span>＋</span> 拡大すると建物情報を表示</div>
   <div id="map-credit" aria-hidden="true">
@@ -86,16 +92,21 @@
   </div>
 
   <!-- 施設一覧ドロワー -->
-  <aside id="drawer">
+  <div id="drawer-backdrop" hidden aria-hidden="true"></div>
+  <aside id="drawer" aria-labelledby="drawer-title" aria-hidden="true" inert>
     <div class="drawer-head">
-      <input id="search" type="search" placeholder="棟名・通称・施設名（例: コラI）">
-      <button id="drawer-close" class="icon-btn" aria-label="閉じる"><svg><use href="#i-close"/></svg></button>
+      <div class="drawer-title-row">
+        <h2 id="drawer-title">施設を探す</h2>
+        <button id="drawer-close" class="icon-btn" type="button" aria-label="施設一覧を閉じる"><svg><use href="#i-close"/></svg></button>
+      </div>
+      <label for="search">棟名・通称・施設名</label>
+      <input id="search" type="search" placeholder="例：コラI、学食、保健センター" autocomplete="off" enterkeyhint="search">
     </div>
     <div id="shop-list"></div>
   </aside>
 
   <!-- 施設情報カード -->
-  <div id="shop-card" class="hidden">
+  <div id="shop-card" class="hidden" role="dialog" aria-modal="false" aria-labelledby="card-name" tabindex="-1">
     <button id="card-close" class="icon-btn" aria-label="閉じる"><svg><use href="#i-close"/></svg></button>
     <div class="card-logo"><img id="card-logo-img" alt=""></div>
     <div class="card-body">
@@ -118,7 +129,7 @@
       <span class="route-toggle-icon" aria-hidden="true"><svg><use href="#i-chevron-down"/></svg></span>
     </button>
     <div id="route-panel-body">
-    <div id="route-info" class="hidden"></div>
+    <div id="route-info" class="hidden" role="status" aria-live="polite"></div>
     <div class="route-actions">
       <button id="btn-nav" class="ar-btn ar-primary"><svg><use href="#i-route"/></svg>ナビゲーション開始</button>
       <button id="btn-ar" class="ar-btn" disabled><svg><use href="#i-ar"/></svg>ARナビ</button>
@@ -128,14 +139,14 @@
   </div>
 
   <!-- GPSナビ HUD -->
-  <div id="nav-hud" class="hidden">
+  <div id="nav-hud" class="hidden" role="region" aria-label="ナビゲーション情報">
     <div id="nav-banner">
       <div id="nav-dest"></div>
       <div id="nav-step"></div>
       <div id="nav-remain"></div>
       <div id="nav-gps"><svg><use href="#i-gps"/></svg><span>GPS待機中</span></div>
     </div>
-    <div id="nav-offroute" class="hidden"><svg><use href="#i-alert"/></svg>ルートから外れています — 引き直します</div>
+    <div id="nav-offroute" class="hidden" role="alert"><svg><use href="#i-alert"/></svg>ルートから外れています — 引き直します</div>
     <div id="nav-controls">
       <button id="nav-view" class="chip-btn"><svg><use href="#i-overview"/></svg><span>俯瞰</span></button>
       <button id="nav-ar" class="chip-btn"><svg><use href="#i-ar"/></svg><span>ARナビ</span></button>
@@ -144,8 +155,8 @@
   </div>
 
   <!-- 乗換カード（屋外単一マップのため通常は使われないが、ナビ機構の一部として保持） -->
-  <div id="transfer-card" class="hidden">
-    <div class="transfer-inner">
+  <div id="transfer-card" class="hidden" role="dialog" aria-modal="true" aria-labelledby="transfer-text">
+    <div class="transfer-inner" tabindex="-1">
       <div class="transfer-icon"><svg><use href="#i-walk"/></svg></div>
       <div id="transfer-text"></div>
       <button id="transfer-done" class="primary-btn" type="button">着いた</button>
@@ -153,10 +164,11 @@
   </div>
 
   <!-- トースト -->
-  <div id="toast" class="hidden"></div>
+  <div id="toast" class="hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="network-status" hidden role="status" aria-live="polite"></div>
 
   <!-- ARビュー -->
-  <div id="ar-view" class="hidden">
+  <div id="ar-view" class="hidden" role="dialog" aria-modal="true" aria-label="ARナビゲーション">
     <video id="ar-video" autoplay muted playsinline></video>
     <canvas id="ar-canvas"></canvas>
     <!-- 進路が画面外にあるときの方向インジケーター -->
@@ -176,17 +188,49 @@
   </div>
 
   <!-- 位置共有の選択シート -->
-  <div id="share-sheet" class="hidden">
-    <div class="sheet-inner">
-      <h3>位置を共有</h3>
-      <button id="share-snapshot" class="sheet-btn" type="button"><b>現在地リンクを送る</b><small>いまの場所を1回だけ共有。相手はリンクを開くだけで経路案内される</small></button>
-      <button id="share-live" class="sheet-btn" type="button"><b>ライブ共有（グループ）</b><small>コードを知っている友達同士で、お互いの位置をリアルタイムに表示</small></button>
-      <button id="share-cancel" class="sheet-btn sheet-cancel" type="button">キャンセル</button>
+  <div id="share-sheet" class="hidden" role="dialog" aria-modal="true" aria-labelledby="share-title">
+    <div class="sheet-inner" tabindex="-1">
+      <div class="share-sheet-head">
+        <div>
+          <p class="share-eyebrow">待ち合わせ</p>
+          <h2 id="share-title">友達と位置を共有</h2>
+        </div>
+        <button id="share-close" class="icon-btn" type="button" aria-label="位置共有を閉じる"><svg><use href="#i-close"/></svg></button>
+      </div>
+      <div id="share-method-view">
+        <p class="share-lead">共有する相手と場面に合わせて、方法を選んでください。</p>
+        <div class="share-methods">
+          <button id="share-snapshot" class="share-method" type="button">
+            <span class="share-method-icon"><svg><use href="#i-pin"/></svg></span>
+            <span class="share-method-copy"><b>現在地を1回送る</b><small>待ち合わせ場所をリンクで送信</small></span>
+            <svg class="share-method-arrow" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+          </button>
+          <button id="share-live" class="share-method" type="button">
+            <span class="share-method-icon"><svg><use href="#i-users"/></svg></span>
+            <span class="share-method-copy"><b>ライブで共有する</b><small>グループ内でお互いの移動を表示</small></span>
+            <svg class="share-method-arrow" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+          </button>
+        </div>
+        <div class="share-privacy"><svg aria-hidden="true"><use href="#i-lock"/></svg><span>位置情報は、選んだ共有方法を実行したときだけ使用します。</span></div>
+      </div>
+      <form id="share-snapshot-view" hidden>
+        <button id="share-back" class="share-back" type="button"><svg aria-hidden="true"><use href="#i-prev"/></svg>共有方法に戻る</button>
+        <p class="share-step-label">現在地を1回送る</p>
+        <h3>リンクに表示する名前</h3>
+        <p class="share-step-desc">相手の地図に「〇〇の位置」と表示されます。入力しなくても共有できます。</p>
+        <div class="share-name-field">
+          <label for="share-name">表示名 <span>任意・12文字まで</span></label>
+          <input id="share-name" type="text" maxlength="12" autocomplete="nickname" placeholder="例：田中">
+        </div>
+        <div id="share-form-status" class="share-form-status" role="status" aria-live="polite"></div>
+        <button id="share-send" class="share-submit" type="submit"><svg aria-hidden="true"><use href="#i-share"/></svg><span>現在地リンクを作成</span></button>
+        <p class="share-submit-note">リンクを知っている相手だけが、送信時点の位置を確認できます。</p>
+      </form>
     </div>
   </div>
 
   <!-- ローディング -->
-  <div id="loader">
+  <div id="loader" role="status" aria-live="polite" aria-label="キャンパスマップを読み込み中">
     <div class="loader-inner">
       <span class="loader-mark">R</span>
       <div class="loader-ring"></div>
@@ -195,7 +239,7 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260728f"></script>
-<script src="js/boot.js?v=20260728f" defer></script>
+<script type="module" src="js/app.js?v=20260728k"></script>
+<script src="js/boot.js?v=20260728k" defer></script>
 </body>
 </html>

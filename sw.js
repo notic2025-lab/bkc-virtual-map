@@ -4,19 +4,19 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v11-hardening';
+const CACHE_VERSION = 'bkc-map-v16-share-flow-final';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/style.css?v=20260728f',
-  './js/app.js?v=20260728f',
+  './css/style.css?v=20260728k',
+  './js/app.js?v=20260728k',
   './js/data.js',
   './js/survey-data.js',
   './js/firebase-config.js',
-  './js/live.js',
-  './js/boot.js?v=20260728f',
+  './js/live.js?v=20260728k',
+  './js/boot.js?v=20260728k',
   './js/survey.js',
   './js/ar.js',
   './vendor/three.module.js',

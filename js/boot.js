@@ -14,6 +14,27 @@ if ('serviceWorker' in navigator &&
   });
 }
 
+// 通信状態。オフラインでもキャッシュ済み地図は使えることを明示する。
+const networkStatus = document.getElementById('network-status');
+let networkStatusTimer = null;
+function updateNetworkStatus(online, announce = false) {
+  if (!networkStatus) return;
+  clearTimeout(networkStatusTimer);
+  if (!online) {
+    networkStatus.textContent = 'オフラインです。保存済みの地図を表示しています';
+    networkStatus.hidden = false;
+  } else if (announce) {
+    networkStatus.textContent = 'オンラインに戻りました';
+    networkStatus.hidden = false;
+    networkStatusTimer = setTimeout(() => { networkStatus.hidden = true; }, 2400);
+  } else {
+    networkStatus.hidden = true;
+  }
+}
+updateNetworkStatus(navigator.onLine);
+addEventListener('offline', () => updateNetworkStatus(false));
+addEventListener('online', () => updateNetworkStatus(true, true));
+
 // 起動ウォッチドッグ: 15秒経ってもローダーが消えない場合は読み込み失敗とみなし、
 // ユーザーに再読み込みを促す（通信断・キャッシュ破損・スクリプトエラー時の固まり対策）
 setTimeout(() => {
@@ -21,5 +42,13 @@ setTimeout(() => {
   if (loader && !loader.classList.contains('done')) {
     const msg = loader.querySelector('p');
     if (msg) msg.textContent = '読み込みに時間がかかっています。通信環境をご確認のうえ、再読み込みしてください';
+    const ring = loader.querySelector('.loader-ring');
+    if (ring) ring.hidden = true;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'loader-retry';
+    retry.textContent = '地図を再読み込み';
+    retry.addEventListener('click', () => location.reload());
+    loader.querySelector('.loader-inner')?.appendChild(retry);
   }
 }, 15000);

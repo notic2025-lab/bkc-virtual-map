@@ -41,15 +41,130 @@ async function loadFirebase() {
 const genCode = () =>
   Array.from(crypto.getRandomValues(new Uint8Array(6)), b => CODE_CHARS[b % CODE_CHARS.length]).join('');
 
-const myName = () => {
-  let n = localStorage.getItem('bkc-live-name') || '';
-  if (!n) {
-    n = (prompt('友達に表示する名前') ?? '').trim().slice(0, 12);
-    if (!n) n = '名無し';
-    localStorage.setItem('bkc-live-name', n);
-  }
-  return n;
-};
+function savedName() {
+  try { return localStorage.getItem('bkc-live-name') || ''; }
+  catch { return ''; }
+}
+
+function requestLiveSetup(joinCode = '') {
+  return new Promise((resolve) => {
+    document.getElementById('live-setup')?.remove();
+    let mode = joinCode ? 'join' : 'create';
+    const modal = document.createElement('div');
+    modal.id = 'live-setup';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'live-setup-title');
+    modal.innerHTML = `
+      <form class="ls-card">
+        <div class="ls-head">
+          <div><p class="ls-eyebrow">リアルタイム</p><h2 id="live-setup-title">ライブ位置共有</h2></div>
+          <button class="ls-close" type="button" aria-label="ライブ共有を閉じる"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+        </div>
+        <p class="ls-lead">一緒に移動する友達と、現在地をリアルタイムで確認できます。</p>
+        <div class="ls-tabs" role="tablist" aria-label="ライブ共有の参加方法">
+          <button type="button" role="tab" data-mode="create" aria-controls="ls-fields">グループを作る</button>
+          <button type="button" role="tab" data-mode="join" aria-controls="ls-fields">コードで参加</button>
+        </div>
+        <div id="ls-fields" class="ls-fields" role="tabpanel">
+          <div class="ls-field">
+            <label for="live-name">地図に表示する名前 <span>12文字まで</span></label>
+            <input id="live-name" name="name" type="text" maxlength="12" autocomplete="nickname"
+              value="${escHtml(savedName())}" placeholder="例：田中">
+            <small>未入力の場合は「名無し」と表示されます。</small>
+          </div>
+          <div class="ls-field ls-code-field">
+            <label for="live-code">グループコード <span>半角英数字4〜8文字</span></label>
+            <input id="live-code" name="code" type="text" minlength="4" maxlength="8"
+              inputmode="text" autocapitalize="characters" spellcheck="false"
+              value="${escHtml(joinCode)}" placeholder="例：BKC123">
+          </div>
+        </div>
+        <div class="ls-mode-note"><svg aria-hidden="true"><use href="#i-lock"/></svg><span></span></div>
+        <div class="ls-error" role="alert" hidden></div>
+        <button class="ls-submit" type="submit"></button>
+        <button class="ls-back" type="button"><svg aria-hidden="true"><use href="#i-prev"/></svg>共有方法の選択に戻る</button>
+      </form>`;
+    document.body.appendChild(modal);
+    const form = modal.querySelector('form');
+    const nameInput = modal.querySelector('#live-name');
+    const codeInput = modal.querySelector('#live-code');
+    const codeField = modal.querySelector('.ls-code-field');
+    const modeNote = modal.querySelector('.ls-mode-note span');
+    const submit = modal.querySelector('.ls-submit');
+    const error = modal.querySelector('.ls-error');
+    const finish = (value) => {
+      modal.remove();
+      resolve(value);
+    };
+    const setMode = (nextMode, { moveFocus = false } = {}) => {
+      mode = nextMode;
+      modal.querySelectorAll('[data-mode]').forEach(button => {
+        const selected = button.dataset.mode === mode;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-selected', String(selected));
+        button.tabIndex = selected ? 0 : -1;
+      });
+      codeField.hidden = mode !== 'join';
+      codeInput.required = mode === 'join';
+      submit.textContent = mode === 'join' ? 'グループに参加' : 'グループを作成';
+      modeNote.textContent = mode === 'join'
+        ? '友達から届いたコードを入力した人だけが参加できます。'
+        : '作成後に表示される招待リンクを、参加してほしい友達へ送ります。';
+      error.hidden = true;
+      if (moveFocus) (mode === 'join' ? codeInput : nameInput).focus();
+    };
+    modal.querySelector('.ls-close').addEventListener('click', () => finish(null));
+    modal.querySelector('.ls-back').addEventListener('click', () => {
+      finish(null);
+      setTimeout(() => ctx?.openShareSheet?.(), 0);
+    });
+    modal.querySelectorAll('[data-mode]').forEach(button => {
+      button.addEventListener('click', () => setMode(button.dataset.mode, { moveFocus: true }));
+      button.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+        event.preventDefault();
+        const nextMode = button.dataset.mode === 'create' ? 'join' : 'create';
+        setMode(nextMode);
+        modal.querySelector(`[data-mode="${nextMode}"]`).focus();
+      });
+    });
+    codeInput.addEventListener('input', () => { error.hidden = true; });
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) finish(null);
+    });
+    modal.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') finish(null);
+      if (event.key === 'Tab') {
+        const focusable = [...modal.querySelectorAll('input, button:not([disabled])')]
+          .filter(element => element.getClientRects().length);
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    });
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const name = nameInput.value.trim().slice(0, 12) || '名無し';
+      const rawCode = codeInput.value.trim().toUpperCase();
+      if (mode === 'join' && !/^[A-Z0-9]{4,8}$/.test(rawCode)) {
+        error.textContent = 'グループコードは半角英数字4〜8文字で入力してください';
+        error.hidden = false;
+        codeInput.focus();
+        return;
+      }
+      try { localStorage.setItem('bkc-live-name', name); } catch { /* 保存なしで継続 */ }
+      finish({ name, code: mode === 'join' ? rawCode : genCode() });
+    });
+    setMode(mode);
+    (mode === 'join' ? codeInput : nameInput).focus();
+  });
+}
 
 // ------------------------------------------------------------
 // 開始 / 停止
@@ -68,31 +183,22 @@ export async function initLive(deps, joinCode = null) {
     return;
   }
 
-  let code = joinCode;
-  if (!code) {
-    const input = prompt('参加するグループコード（新しくグループを作る場合は空欄のままOK）') ?? '';
-    code = input.trim().toUpperCase();
-    if (code && !/^[A-Z0-9]{4,8}$/.test(code)) {
-      ctx.toast('コードは英数字4〜8文字です');
-      return;
-    }
-    if (!code) code = genCode();
-  }
+  const setup = await requestLiveSetup((joinCode ?? '').trim().toUpperCase());
+  if (!setup) return;
 
   ctx.startGeolocation();
   ctx.toast('ライブ共有に接続しています…');
   try {
-    await startSession(code);
+    await startSession(setup.code, setup.name);
   } catch (e) {
     console.warn('live share failed', e);
     ctx.toast('ライブ共有に接続できませんでした（Realtime Databaseの設定を確認してください）', 5000);
   }
 }
 
-async function startSession(code) {
+async function startSession(code, name) {
   const { db, ref, onValue, onDisconnect, remove } = await loadFirebase();
   const uid = crypto.randomUUID().slice(0, 8);
-  const name = myName();
   const roomRef = ref(db, `rooms/${code}`);
   const myRef = ref(db, `rooms/${code}/${uid}`);
 
@@ -292,34 +398,143 @@ function buildPanel() {
   style.textContent = `
     #live-panel {
       position: fixed; z-index: 60; left: 10px; top: calc(max(14px, env(safe-area-inset-top)) + 118px);
-      width: min(250px, calc(100vw - 90px));
-      background: var(--surface-solid, #fff); border: 1px solid var(--line, #ddd);
-      border-radius: 14px; padding: 10px 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18);
-      font-size: 12.5px; color: var(--txt, #222);
+      width: min(320px, calc(100vw - 76px)); max-height: min(420px, calc(100dvh - 210px));
+      overflow-y: auto; box-sizing: border-box; padding: 14px;
+      background: rgba(255,254,250,.97); border: 1px solid rgba(32,38,41,.13);
+      border-radius: 14px; box-shadow: 0 12px 36px rgba(22,28,24,.16);
+      font-size: 12.5px; color: var(--txt, #222); backdrop-filter: blur(16px);
     }
     #live-panel.hidden { display: none; }
-    #live-panel .lp-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; margin-bottom: 6px; }
-    #live-panel .lp-code { font-family: ui-monospace, monospace; letter-spacing: .12em; background: rgba(157,21,53,.08); color: #9d1535; border-radius: 6px; padding: 2px 7px; }
-    #live-panel .lp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; border-top: 1px solid var(--line, #eee); }
-    #live-panel .lp-row b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #live-panel .lp-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    #live-panel .lp-title { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 800; }
+    #live-panel .lp-live-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #2f8a6b;
+      box-shadow: 0 0 0 3px rgba(47,138,107,.12);
+    }
+    #live-panel .lp-code {
+      min-height: 34px; padding: 0 9px; border: 1px solid rgba(141,25,55,.16);
+      border-radius: 7px; background: rgba(141,25,55,.06); color: #8d1937;
+      font: 700 11px/1 ui-monospace, monospace; letter-spacing: .12em; cursor: pointer;
+    }
+    #live-panel .lp-meta { margin: 7px 0 11px; color: var(--txt-dim, #666); font-size: 11px; }
+    #live-panel .lp-row {
+      display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center;
+      gap: 8px; min-height: 52px; border-top: 1px solid var(--line, #eee);
+    }
+    #live-panel .lp-row b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #live-panel .lp-distance { color: var(--txt-dim, #666); font-size: 11px; font-variant-numeric: tabular-nums; }
     #live-panel .lp-go {
       flex-shrink: 0; border: 1px solid var(--line, #ccc); background: transparent; cursor: pointer;
-      border-radius: 8px; padding: 5px 10px; font: 700 11.5px/1 inherit; color: inherit;
+      min-height: 44px; border-radius: 8px; padding: 5px 10px; font: 700 12px/1 inherit; color: inherit;
     }
-    #live-panel .lp-actions { display: flex; gap: 6px; margin-top: 8px; }
+    #live-panel .lp-actions { display: grid; grid-template-columns: 1fr auto; gap: 7px; margin-top: 10px; }
     #live-panel .lp-actions button {
-      flex: 1; min-height: 38px; border-radius: 9px; cursor: pointer; font: 700 12px/1 inherit;
+      min-height: 44px; padding: 0 13px; border-radius: 9px; cursor: pointer; font: 700 12px/1 inherit;
       border: 1px solid var(--line, #ccc); background: transparent; color: inherit;
     }
-    #live-panel .lp-actions .lp-invite { background: #9d1535; border-color: #9d1535; color: #fff; }
-    #live-panel .lp-empty { color: var(--txt-dim, #888); padding: 6px 0; border-top: 1px solid var(--line, #eee); }
+    #live-panel .lp-actions .lp-invite { background: #8d1937; border-color: #8d1937; color: #fff; }
+    #live-panel .lp-actions .lp-stop { color: #8d1937; }
+    #live-panel .lp-empty {
+      padding: 12px 0; border-top: 1px solid var(--line, #eee);
+      color: var(--txt-dim, #666); font-size: 12px; line-height: 1.6;
+    }
     body.nav-active #live-panel { display: none; }
+    #live-setup {
+      position: fixed; inset: 0; z-index: 120; display: grid; place-items: center;
+      padding: 12px; background: rgba(21,24,23,.48); backdrop-filter: blur(4px);
+    }
+    #live-setup .ls-card {
+      width: min(480px, 100%); max-height: calc(100dvh - 24px); overflow-y: auto;
+      box-sizing: border-box; padding: 24px; border: 1px solid rgba(32,38,41,.13);
+      border-radius: 20px; background: #fffefa; color: var(--txt, #222);
+      box-shadow: 0 24px 80px rgba(17,22,19,.28);
+    }
+    #live-setup .ls-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    #live-setup .ls-eyebrow {
+      margin: 0 0 4px; color: #8d1937; font-size: 11px; font-weight: 800; letter-spacing: .1em;
+    }
+    #live-setup h2 { margin: 0; font-size: 21px; line-height: 1.35; letter-spacing: -.01em; }
+    #live-setup .ls-close {
+      display: grid; place-items: center; flex: 0 0 auto; width: 44px; height: 44px;
+      margin: -4px -4px 0 0; border: 0; border-radius: 50%; background: #f1efea;
+      color: inherit; cursor: pointer;
+    }
+    #live-setup .ls-close svg { width: 17px; height: 17px; }
+    #live-setup .ls-lead {
+      margin: 10px 0 18px; color: var(--txt-dim, #666); font-size: 13px; line-height: 1.65;
+    }
+    #live-setup .ls-tabs {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
+      border-radius: 10px; background: #efede7;
+    }
+    #live-setup .ls-tabs button {
+      min-height: 44px; border: 0; border-radius: 7px; background: transparent;
+      color: var(--txt-dim, #666); font: 700 12px/1 inherit; cursor: pointer;
+    }
+    #live-setup .ls-tabs button.active {
+      background: #fff; color: #202629; box-shadow: 0 1px 4px rgba(28,34,30,.1);
+    }
+    #live-setup .ls-fields { padding-top: 8px; }
+    #live-setup .ls-field { display: grid; gap: 7px; margin-top: 14px; }
+    #live-setup .ls-field[hidden] { display: none; }
+    #live-setup .ls-field label {
+      display: flex; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 700;
+    }
+    #live-setup .ls-field label span { color: var(--txt-dim, #666); font-size: 11px; font-weight: 500; }
+    #live-setup .ls-field input {
+      width: 100%; min-height: 52px; box-sizing: border-box; padding: 12px 14px;
+      border: 1px solid var(--line, #ccc); border-radius: 10px; background: #fff;
+      color: inherit; font: 16px/1.3 inherit; text-transform: none;
+    }
+    #live-setup .ls-field input:focus {
+      border-color: #8d1937; box-shadow: 0 0 0 3px rgba(141,25,55,.09);
+    }
+    #live-setup .ls-field small { color: var(--txt-dim, #666); font-size: 11px; line-height: 1.5; }
+    #live-code {
+      text-transform: uppercase !important; letter-spacing: .12em; font-family: ui-monospace, monospace !important;
+    }
+    #live-setup .ls-mode-note {
+      display: flex; align-items: flex-start; gap: 8px; margin: 16px 0 0;
+      color: var(--txt-dim, #666); font-size: 11.5px; line-height: 1.55;
+    }
+    #live-setup .ls-mode-note svg {
+      flex: 0 0 auto; width: 15px; height: 15px; margin-top: 1px; color: #50705f;
+    }
+    #live-setup .ls-error {
+      margin-top: 10px; padding: 9px 11px; border-radius: 7px;
+      background: rgba(155,28,49,.07); color: #9b1c31; font-size: 12px; line-height: 1.5;
+    }
+    #live-setup .ls-submit {
+      width: 100%; min-height: 52px; margin-top: 16px; border: 0; border-radius: 10px;
+      background: #8d1937; color: #fff; font: 800 14px/1 inherit; cursor: pointer;
+    }
+    #live-setup .ls-submit:hover { background: #74122c; }
+    #live-setup .ls-back {
+      display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%;
+      min-height: 44px; margin-top: 6px; border: 0; background: transparent;
+      color: var(--txt-dim, #666); font: 700 12px/1 inherit; cursor: pointer;
+    }
+    #live-setup .ls-back svg { width: 15px; height: 15px; }
+    #live-setup :focus-visible { outline: 3px solid #236bce; outline-offset: 2px; }
+    @media (max-width: 420px) {
+      #live-setup { place-items: end center; padding: 0; }
+      #live-setup .ls-card {
+        width: 100%; max-height: calc(100dvh - 12px); padding: 20px 18px max(18px, env(safe-area-inset-bottom));
+        border-right: 0; border-bottom: 0; border-left: 0; border-radius: 20px 20px 0 0;
+      }
+      #live-setup .ls-lead { margin-bottom: 14px; }
+      #live-setup .ls-field { margin-top: 12px; }
+      #live-setup .ls-mode-note { margin-top: 12px; }
+      #live-setup .ls-submit { margin-top: 12px; }
+    }
   `;
   document.head.appendChild(style);
 
   panel = document.createElement('div');
   panel.id = 'live-panel';
   panel.className = 'hidden';
+  panel.setAttribute('role', 'region');
+  panel.setAttribute('aria-label', 'ライブ位置共有');
   (document.getElementById('app') ?? document.body).appendChild(panel);
 }
 
@@ -357,15 +572,24 @@ function updatePanel() {
       const me = gpsToWorld(my.lat, my.lng);
       dist = `${Math.round(Math.hypot(f.target.x - me.x, f.target.z - me.z) * 4)}m`;
     }
-    return `<div class="lp-row"><b>${escHtml(f.name)}</b><span>${dist}</span><button class="lp-go" data-uid="${escHtml(f.uid)}">案内</button></div>`;
+    return `<div class="lp-row"><b>${escHtml(f.name)}</b><span class="lp-distance">${dist}</span><button class="lp-go" data-uid="${escHtml(f.uid)}">案内</button></div>`;
   }).join('');
   panel.innerHTML = `
-    <div class="lp-head"><span>ライブ共有</span><span class="lp-code">${session.code}</span></div>
-    ${rows || '<div class="lp-empty">友達の参加を待っています…<br>招待リンクを送ってください</div>'}
+    <div class="lp-head">
+      <div class="lp-title"><i class="lp-live-dot"></i><span>ライブ共有中</span></div>
+      <button class="lp-code" type="button" aria-label="グループコード ${session.code} をコピー">${session.code}</button>
+    </div>
+    <div class="lp-meta">${friends.length ? `${friends.length}人の友達が参加中` : 'あなたの位置を共有しています'}</div>
+    ${rows || '<div class="lp-empty">まだ友達は参加していません。<br>招待リンクを送って合流しましょう。</div>'}
     <div class="lp-actions">
-      <button class="lp-invite" type="button">招待リンク</button>
-      <button class="lp-stop" type="button">停止</button>
+      <button class="lp-invite" type="button">友達を招待</button>
+      <button class="lp-stop" type="button">共有を終了</button>
     </div>`;
+  panel.querySelector('.lp-code').addEventListener('click', () => {
+    navigator.clipboard?.writeText(session.code)
+      .then(() => ctx.toast('グループコードをコピーしました'))
+      .catch(() => ctx.toast(`グループコード: ${session.code}`));
+  });
   panel.querySelector('.lp-invite').addEventListener('click', shareInvite);
   panel.querySelector('.lp-stop').addEventListener('click', () => stopLive(true));
   panel.querySelectorAll('.lp-go').forEach(b =>
