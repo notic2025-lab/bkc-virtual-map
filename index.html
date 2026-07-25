@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0c0a10">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%239d1535'/><text x='50' y='56' font-family='Georgia,serif' font-size='58' font-weight='700' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'>R</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260725">
+<link rel="stylesheet" href="css/style.css?v=20260725b">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -182,8 +182,9 @@
     <div class="floor-picker-inner">
       <div class="floor-picker-brand"><span class="brand-mark"><span>BKC</span></span></div>
       <h2>いまどこにいますか？</h2>
-      <p class="floor-picker-sub">現在地に近い場所を選んでください<br><small>キャンパス案内の出発地点になります</small></p>
+      <p class="floor-picker-sub">GPSで自動検出するか、近い場所を選んでください<br><small>キャンパス案内の出発地点になります</small></p>
       <div class="floor-picker-list">
+        <button id="floor-picker-gps" class="floor-picker-btn floor-picker-gps" type="button"><b>📍</b><span>GPSで現在地を自動検出（推奨）</span></button>
         <button class="floor-picker-btn" data-start="gate-main" type="button"><b>正門</b><span>フロンティアアベニュー側のメインゲート</span></button>
         <button class="floor-picker-btn" data-start="bus" type="button"><b>バス</b><span>バスターミナル（セントラルサーカス前）</span></button>
         <button class="floor-picker-btn" data-start="gate-east" type="button"><b>東門</b><span>駐輪場・バイク置場側のゲート</span></button>
@@ -193,7 +194,7 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260725"></script>
+<script type="module" src="js/app.js?v=20260725b"></script>
 <script>
 // Service Worker（オフラインキャッシュ・再訪時の高速表示）。
 // 対応外・file:// 環境では静かにスキップする。

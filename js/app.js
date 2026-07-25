@@ -1793,9 +1793,51 @@ function chooseStartPlace(placeId) {
   $('floor-picker').classList.add('hidden');
   toast(`出発地点を「${p.name}」に設定しました。目的地を検索してみましょう`);
 }
-document.querySelectorAll('.floor-picker-btn').forEach(btn =>
+document.querySelectorAll('.floor-picker-btn[data-start]').forEach(btn =>
   btn.addEventListener('click', () => chooseStartPlace(btn.dataset.start)));
 $('floor-picker-skip').addEventListener('click', () => chooseStartPlace('gate-main'));
+
+// ---- GPSで出発地点を自動検出 ----
+function waitForGpsFix(ms) {
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    const timer = setInterval(() => {
+      if (geoState.ok && geoState.world) { clearInterval(timer); resolve(true); }
+      else if (performance.now() - t0 > ms) { clearInterval(timer); resolve(false); }
+    }, 250);
+  });
+}
+
+let gpsStartBusy = false;
+async function chooseStartByGps({ silent = false } = {}) {
+  if (gpsStartBusy || $('floor-picker').classList.contains('hidden')) return;
+  gpsStartBusy = true;
+  const btn = $('floor-picker-gps');
+  const span = btn.querySelector('span');
+  const orig = span.textContent;
+  btn.disabled = true;
+  span.textContent = 'GPSで現在地を取得中…';
+  startGeolocation();
+  const ok = await waitForGpsFix(silent ? 6000 : 10000);
+  if (ok) {
+    avatar.position.set(geoState.world.x, 0, geoState.world.z);
+    setViewFloor('campus', { alsoUser: true });
+    $('floor-picker').classList.add('hidden');
+    const target = avatar.position.clone().setY(0);
+    flyTo(target.clone().add(new THREE.Vector3(0, 64, 50)), target, 1.2);
+    toast('GPSで現在地を設定しました。目的地を検索してみましょう');
+  } else {
+    btn.disabled = false;
+    span.textContent = orig;
+    if (!silent) {
+      toast(geoState.lat != null
+        ? 'キャンパスの外にいるようです — 出発地点を選んでください'
+        : '位置情報を取得できませんでした — 出発地点を選んでください');
+    }
+  }
+  gpsStartBusy = false;
+}
+$('floor-picker-gps').addEventListener('click', () => chooseStartByGps());
 
 // 現地測量モード（?survey）— 通常利用者のペイロードに影響しないよう動的読み込み
 if (new URLSearchParams(location.search).has('survey')) {
@@ -1807,6 +1849,10 @@ if (new URLSearchParams(location.search).has('survey')) {
 setTimeout(() => {
   $('loader').classList.add('done');
   $('floor-picker').classList.remove('hidden'); // まず出発地点を選択
+  // 位置情報が既に許可済みなら、質問せずにGPSで自動検出する（許可ダイアログは出ない）
+  navigator.permissions?.query({ name: 'geolocation' })
+    .then(p => { if (p.state === 'granted') chooseStartByGps({ silent: true }); })
+    .catch(() => { /* Permissions API非対応ブラウザでは手動選択のまま */ });
   // オープニングカメラ演出
   camera.position.set(-120, 180, 200);
   flyTo(new THREE.Vector3(0, 96, 108), new THREE.Vector3(0, 0, -4), 2.4);

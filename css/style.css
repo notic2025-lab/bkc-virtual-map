@@ -522,6 +522,10 @@ body.nav-active #drawer { display: none !important; }
 .floor-picker-btn:hover b, .floor-picker-btn:active b {
   background: linear-gradient(135deg, #f43f5e, #be123c); color: #08101e;
 }
+.floor-picker-btn.floor-picker-gps { border-color: rgba(255,93,120,.55); background: rgba(244,63,94,.12); }
+.floor-picker-btn.floor-picker-gps b { background: linear-gradient(135deg, #f43f5e, #be123c); color: #fff; font-size: 22px; }
+.floor-picker-btn.floor-picker-gps span { color: var(--txt); font-weight: 700; }
+.floor-picker-btn.floor-picker-gps:disabled { opacity: .6; cursor: wait; }
 #floor-picker-skip {
   border: none; background: none; cursor: pointer;
   color: var(--txt-dim); font-family: inherit; font-size: 12.5px;
