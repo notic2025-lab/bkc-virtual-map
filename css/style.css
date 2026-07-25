@@ -654,16 +654,6 @@ body {
   color: var(--accent);
 }
 
-#quick-destination kbd {
-  border: 1px solid var(--line);
-  border-bottom-color: var(--line-strong);
-  border-radius: 5px;
-  padding: 4px 6px;
-  color: var(--txt-dim);
-  background: rgba(247, 246, 242, 0.9);
-  font: 600 10px/1 inherit;
-  white-space: nowrap;
-}
 
 .round-btn {
   width: 58px;
@@ -858,7 +848,7 @@ body {
     padding: 6px 12px;
     border-radius: 10px;
   }
-  .sb-text small, #quick-destination kbd { display: none; }
+  .sb-text small { display: none; }
   .sb-text b { font-size: 12.5px; }
   .round-btn { width: 50px; height: 50px; border-radius: 10px; }
   #filters {
