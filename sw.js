@@ -4,14 +4,14 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v8-no-kbd';
+const CACHE_VERSION = 'bkc-map-v9-meet';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/style.css?v=20260728c',
-  './js/app.js?v=20260728c',
+  './css/style.css?v=20260728d',
+  './js/app.js?v=20260728d',
   './js/data.js',
   './js/survey-data.js',
   './js/survey.js',

@@ -1889,6 +1889,97 @@ canvas.addEventListener('webglcontextrestored', () => {
 // 起動
 animate();
 
+// ------------------------------------------------------------
+// 友達と待ち合わせ（位置共有）
+//   「位置を送る」→ 現在地入りのリンクを生成してLINE等で共有。
+//   受け取った側がリンクを開くと、その場所に友達ピンが立ち経路案内できる。
+//   スナップショット共有のためサーバー不要（リンクを渡した相手にしか伝わらない）。
+// ------------------------------------------------------------
+function shareMyLocation() {
+  if (geoState.lat == null) {
+    startGeolocation();
+    toast('現在地を取得中です。少し待ってからもう一度押してください');
+    return;
+  }
+  const name = (prompt('相手に表示する名前（省略可）') ?? '').trim().slice(0, 12);
+  const url = new URL(location.href);
+  url.search = '';
+  url.searchParams.set('meet', `${geoState.lat.toFixed(6)},${geoState.lng.toFixed(6)}`);
+  url.searchParams.set('t', String(Date.now()));
+  if (name) url.searchParams.set('n', name);
+  const title = `${name || '友達'}の現在地 | BKCキャンパスマップ`;
+  const copyLink = () => {
+    navigator.clipboard?.writeText(url.toString())
+      .then(() => toast('位置リンクをコピーしました。LINEなどで送ってください', 3600))
+      .catch(() => toast('このURLを送ってください: ' + url.toString(), 8000));
+  };
+  // スマホはOSの共有シート（LINE等に直接送れる）、PCはリンクコピー
+  if (isMobileDevice && navigator.share) {
+    // キャンセル（AbortError）は正常系。それ以外の失敗はコピーにフォールバック
+    navigator.share({ title, url: url.toString() }).catch((e) => {
+      if (e?.name !== 'AbortError') copyLink();
+    });
+  } else {
+    copyLink();
+  }
+}
+$('btn-share').addEventListener('click', shareMyLocation);
+
+// 受信側: ?meet=lat,lng を「友達の位置」として登録し、マーカーを立てる
+function setupMeetPoint() {
+  const q = new URLSearchParams(location.search);
+  const meet = q.get('meet');
+  if (!meet) return null;
+  const [lat, lng] = meet.split(',').map(Number);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const { x, z } = gpsToWorld(lat, lng);
+  if (Math.abs(x) > MAP_W / 2 + 20 || Math.abs(z) > MAP_D / 2 + 20) {
+    toast('共有された位置はキャンパスの外のようです');
+    return null;
+  }
+  const rawName = (q.get('n') ?? '').trim().slice(0, 12);
+  const name = rawName ? `${rawName}の位置` : '共有された位置';
+  const pos = new THREE.Vector3(x, 0, z);
+  // nearestNode は "campus:U1" 形式のグラフキーを返すため、entry にはノードIDだけを渡す
+  const entryKey = nearestNode(pos, 'campus');
+  if (!entryKey) return null;
+  const place = {
+    id: 'meet', floor: 'campus', kind: 'meet', name,
+    entry: entryKey.split(':')[1],
+    pin: { left: x / MAP_W * 100 + 50, top: z / MAP_D * 100 + 50 },
+    _pos: pos,
+  };
+  PLACES.push(place);
+
+  // 友達ピン（青のビーコン＋名前ラベル）
+  const g = new THREE.Group();
+  const pillar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.6, 0.6, 12, 16, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x2f6fb3, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthTest: false })
+  );
+  pillar.position.y = 6;
+  pillar.renderOrder = 16;
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1.8, 0.16, 10, 40),
+    new THREE.MeshBasicMaterial({ color: 0x2f6fb3, depthTest: false })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.25;
+  ring.renderOrder = 16;
+  const label = makeLabelSprite(name, { border: '#2f6fb3', scale: 0.9 });
+  label.position.y = 9;
+  label.userData = { baseY: 9, phase: 0 };
+  labelSprites.push(label);
+  g.add(pillar, ring, label);
+  g.position.copy(pos);
+  scene.add(g);
+
+  const t = Number(q.get('t'));
+  const mins = Number.isFinite(t) ? Math.max(0, Math.round((Date.now() - t) / 60000)) : null;
+  return { place, mins };
+}
+const meetPoint = setupMeetPoint();
+
 // ---- 起動: すぐにGPSを取得し、現在地から案内を開始する（選択画面なし） ----
 //   取得できない・キャンパス外の場合は正門を出発地点にして続行する。
 //   その後もwatchPositionが動き続けるため、遅れて測位できれば自動で現在地に追従する。
@@ -1928,5 +2019,11 @@ setTimeout(() => {
   // オープニングカメラ演出 → GPS取得
   camera.position.set(-120, 180, 200);
   flyTo(new THREE.Vector3(0, 96, 108), new THREE.Vector3(0, 0, -4), 2.4);
-  initStartLocation();
+  initStartLocation().then(() => {
+    // 位置共有リンクで開かれた場合は、友達の位置まで自動で経路案内
+    if (meetPoint) {
+      const ago = meetPoint.mins != null && meetPoint.mins > 0 ? `（${meetPoint.mins}分前に共有）` : '';
+      if (showRoute('meet')) toast(`「${meetPoint.place.name}」へ案内します${ago}`, 3800);
+    }
+  });
 }, 600);

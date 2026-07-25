@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#f5f3ee">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%239d1535'/><text x='50' y='56' font-family='Georgia,serif' font-size='58' font-weight='700' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'>R</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260728c">
+<link rel="stylesheet" href="css/style.css?v=20260728d">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -33,6 +33,7 @@
   <symbol id="i-prev" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
   <symbol id="i-next" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
   <symbol id="i-turn" viewBox="0 0 24 24"><path d="m12 3 6 7h-4v6a5 5 0 0 1-5 5H6v-4h3a1 1 0 0 0 1-1v-6H6z"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 14V4M12 4 8.5 7.5M12 4l3.5 3.5"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></symbol>
 </svg>
 
 <div id="app">
@@ -71,6 +72,7 @@
   <div id="map-controls" aria-label="地図操作">
     <button id="btn-north" type="button" title="北を上に戻す"><svg><use href="#i-north"/></svg><small>北</small></button>
     <button id="btn-locate" type="button" title="現在地を中央に表示"><svg><use href="#i-gps"/></svg></button>
+    <button id="btn-share" type="button" title="自分の位置を友達に送る"><svg><use href="#i-share"/></svg></button>
     <button id="btn-zoom-in" type="button" title="拡大"><svg><use href="#i-plus"/></svg></button>
     <button id="btn-zoom-out" type="button" title="縮小"><svg><use href="#i-minus"/></svg></button>
   </div>
@@ -180,7 +182,7 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260728c"></script>
+<script type="module" src="js/app.js?v=20260728d"></script>
 <script>
 // Service Worker（オフラインキャッシュ・再訪時の高速表示）。
 // 対応外・file:// 環境では静かにスキップする。
