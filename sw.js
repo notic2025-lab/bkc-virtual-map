@@ -4,18 +4,19 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v10-live';
+const CACHE_VERSION = 'bkc-map-v11-hardening';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/style.css?v=20260728e',
-  './js/app.js?v=20260728e',
+  './css/style.css?v=20260728f',
+  './js/app.js?v=20260728f',
   './js/data.js',
   './js/survey-data.js',
   './js/firebase-config.js',
   './js/live.js',
+  './js/boot.js?v=20260728f',
   './js/survey.js',
   './js/ar.js',
   './vendor/three.module.js',
@@ -47,11 +48,14 @@ self.addEventListener('fetch', (event) => {
 
   if (req.mode === 'navigate') {
     // HTMLはネットワーク優先（更新を確実に配る）。オフライン時はキャッシュへフォールバック
+    // 404等の異常応答はキャッシュしない（不良ページがオフライン時に固定化されるのを防ぐ）
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
+          }
           return res;
         })
         .catch(() => caches.match(req).then((hit) => hit ?? caches.match('./index.html')))

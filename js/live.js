@@ -159,14 +159,20 @@ export function stopLive(clearRemote = true) {
 // ------------------------------------------------------------
 // 友達の位置の反映
 // ------------------------------------------------------------
+const MAX_MEMBERS = 40; // 1グループの表示上限（異常データによる描画DoSを防ぐ）
+
 function updateFriends(data) {
   if (!session) return;
   const now = Date.now();
   const seen = new Set();
 
-  for (const [uid, v] of Object.entries(data)) {
+  // DBの内容は「信頼できない入力」として扱う:
+  //   キー形式・値の型・鮮度・キャンパス範囲・件数をすべて検証してから使う
+  for (const [uid, v] of Object.entries(data).slice(0, MAX_MEMBERS)) {
     if (uid === session.uid) continue;
-    if (!v || !Number.isFinite(v.lat) || !Number.isFinite(v.lng)) continue;
+    if (!/^[a-f0-9-]{4,40}$/i.test(uid)) continue;  // 想定外のキーは無視（属性注入の一次防御）
+    if (!v || typeof v !== 'object') continue;
+    if (!Number.isFinite(v.lat) || !Number.isFinite(v.lng)) continue;
     if (!Number.isFinite(v.t) || now - v.t > STALE_MS) continue;
     const { x, z } = gpsToWorld(v.lat, v.lng);
     if (Math.abs(x) > MAP_W / 2 + 30 || Math.abs(z) > MAP_D / 2 + 30) continue; // キャンパス外は表示しない
@@ -174,7 +180,8 @@ function updateFriends(data) {
 
     let f = session.friends.get(uid);
     if (!f) {
-      f = { uid, name: String(v.name ?? '友達').slice(0, 12), target: new THREE.Vector3(x, 0, z) };
+      const rawName = typeof v.name === 'string' ? v.name : '';
+      f = { uid, name: (rawName.trim() || '友達').slice(0, 12), target: new THREE.Vector3(x, 0, z) };
       makePin(f);
       session.friends.set(uid, f);
       ctx.toast(`${f.name} がグループに参加しました`);
@@ -350,7 +357,7 @@ function updatePanel() {
       const me = gpsToWorld(my.lat, my.lng);
       dist = `${Math.round(Math.hypot(f.target.x - me.x, f.target.z - me.z) * 4)}m`;
     }
-    return `<div class="lp-row"><b>${escHtml(f.name)}</b><span>${dist}</span><button class="lp-go" data-uid="${f.uid}">案内</button></div>`;
+    return `<div class="lp-row"><b>${escHtml(f.name)}</b><span>${dist}</span><button class="lp-go" data-uid="${escHtml(f.uid)}">案内</button></div>`;
   }).join('');
   panel.innerHTML = `
     <div class="lp-head"><span>ライブ共有</span><span class="lp-code">${session.code}</span></div>

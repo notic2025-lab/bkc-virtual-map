@@ -5,10 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>立命館大学BKC バーチャルキャンパスマップ | Ritsumeikan BKC</title>
 <meta name="description" content="立命館大学びわこ・くさつキャンパス（BKC）の3Dバーチャルマップ。建物検索・最短経路案内・GPSナビ・ARナビ対応。">
+<!-- CSP: 自ホスト＋Firebase/gstatic のみ許可（XSS・不正スクリプト実行の被害を限定する）。
+     sha256 ハッシュは下の importmap の中身に対応。importmap を書き換えたら再計算が必要。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-JmFPMM6hqTDeOhh+5pDmskMz2dW/Br0dXHziUxIC+BA=' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.firebaseio.com wss://*.firebaseio.com https://www.gstatic.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#f5f3ee">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%239d1535'/><text x='50' y='56' font-family='Georgia,serif' font-size='58' font-weight='700' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'>R</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260728e">
+<link rel="stylesheet" href="css/style.css?v=20260728f">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -192,15 +195,7 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260728e"></script>
-<script>
-// Service Worker（オフラインキャッシュ・再訪時の高速表示）。
-// 対応外・file:// 環境では静かにスキップする。
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => { /* 登録失敗でもアプリは動作する */ });
-  });
-}
-</script>
+<script type="module" src="js/app.js?v=20260728f"></script>
+<script src="js/boot.js?v=20260728f" defer></script>
 </body>
 </html>

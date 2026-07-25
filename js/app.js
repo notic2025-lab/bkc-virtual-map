@@ -1065,7 +1065,8 @@ function setControlIcon(id, icon, label) {
   const el = $(id);
   el.innerHTML = `<svg aria-hidden="true"><use href="#i-${icon}"/></svg><span>${label}</span>`;
 }
-function esc(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+// HTMLエスケープ。非文字列（undefined等）が渡ってもクラッシュしないよう防御的に扱う
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 let toastTimer = null;
 function toast(msg, ms = 2600) {
@@ -1339,9 +1340,11 @@ function renderShopList(filter = '', cat = 'all') {
     const div = document.createElement('div');
     div.className = 'shop-item';
     div.innerHTML = `
-      <img class="thumb" src="${s.logo}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      <img class="thumb" src="${s.logo}" alt="" loading="lazy">
       <div class="meta"><b>${esc(s.name)}</b><span>${s.no != null ? `<i class="floor-badge">${s.no}</i>` : ''}${esc(s.tag)}</span></div>
       <button class="shop-info-btn" type="button" title="施設情報">ⓘ</button>`;
+    // インラインonerrorはCSPで禁止しているため、リスナーで読み込み失敗を処理する
+    div.querySelector('.thumb').addEventListener('error', (e) => { e.target.style.visibility = 'hidden'; });
     // 行タップ1回で経路案内まで直行（店舗情報はⓘから）
     div.addEventListener('click', (event) => {
       if (event.target.closest('.shop-info-btn')) return;
@@ -1939,13 +1942,18 @@ $('share-live').addEventListener('click', () => {
 });
 
 // ライブ共有（Firebase）は使うときだけ動的読み込み。通常利用者のペイロードに影響しない
+let liveShareLoading = false; // 連打による多重初期化を防ぐ
 async function startLiveShare(code = null) {
+  if (liveShareLoading) return;
+  liveShareLoading = true;
   try {
     const m = await import('./live.js');
-    m.initLive({ scene, geoState, startGeolocation, toast, showRoute, PLACES, nearestNode, makeLabelSprite, isMobileDevice }, code);
+    await m.initLive({ scene, geoState, startGeolocation, toast, showRoute, PLACES, nearestNode, makeLabelSprite, isMobileDevice }, code);
   } catch (e) {
-    console.warn(e);
+    console.warn('live share load failed', e);
     toast('ライブ共有を読み込めませんでした（通信環境をご確認ください）');
+  } finally {
+    liveShareLoading = false;
   }
 }
 

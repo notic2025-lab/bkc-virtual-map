@@ -54,6 +54,22 @@ python3 -m http.server 8931
 測量は一度に終える必要はありません。何回かに分けて歩いてもデータは端末に蓄積され、
 エクスポートのたびに全データが出力されます。
 
+## 🔒 セキュリティと運用
+
+- **Firebase Realtime Database のルール**は必ず [firebase.rules.json](firebase.rules.json) の内容を
+  コンソールの「ルール」タブに貼り付けて公開すること。書き込みをメンバー単位に限定し、
+  データの型・文字数・座標範囲・不明キーの拒否までサーバー側で検証する
+  （部屋ごと消す攻撃・巨大データ注入・不正な形のデータをDB側で遮断する）
+- `js/firebase-config.js` の apiKey はFirebase Webアプリの仕様上「公開情報」。
+  秘密はルール側で守る設計であり、キー削除やコード秘匿は不要
+- ページには **CSP**（Content-Security-Policy）を設定済み。実行できるスクリプトは
+  自ホストと gstatic（Firebase SDK）のみ。`index.html` の importmap を書き換えた場合は
+  CSPコメントの手順どおり sha256 ハッシュを再計算すること
+- ライブ共有で受信するデータは**すべて信頼できない入力として検証**してから描画する
+  （キー形式・型・鮮度・座標範囲・件数上限・HTMLエスケープ）
+- **デプロイ前チェック**: `node tools/validate-data.mjs` で通路グラフの連結性と
+  データ整合性を検証する（survey-data.js 更新時は必須）
+
 ## スマホで使う場合（GPS・AR含む）
 
 カメラ・GPS・コンパスは HTTPS または localhost が必要。同一LANのスマホから試すなら:

@@ -587,6 +587,13 @@ export function latLngToPercent(lat, lng) {
 
 import { SURVEY } from './survey-data.js';
 
+// 測量データの座標として妥当か（NaN・範囲外が1つでも混ざると
+// 経路グラフ全体が壊れるため、取り込み前に必ず検証する）
+function isValidLatLng(p) {
+  return p && Number.isFinite(p.lat) && Number.isFinite(p.lng)
+    && p.lat >= 34.9 && p.lat <= 35.1 && p.lng >= 135.8 && p.lng <= 136.1;
+}
+
 try {
   const fl = FLOORS.campus;
   if (SURVEY?.nodes && Object.keys(SURVEY.nodes).length) {
@@ -594,8 +601,11 @@ try {
       fl.navNodes = {};
       fl.navEdges = [];
     }
-    // 測量ノードを percent 座標へ変換してグラフに追加
+    // 測量ノードを percent 座標へ変換してグラフに追加（不正値は捨てる・上限あり）
+    let added = 0;
     for (const [id, p] of Object.entries(SURVEY.nodes)) {
+      if (!isValidLatLng(p) || typeof id !== 'string' || !/^[\w-]{1,24}$/.test(id)) continue;
+      if (++added > 5000) break;
       fl.navNodes[id] = latLngToPercent(p.lat, p.lng);
     }
     for (const [a, b] of SURVEY.edges ?? []) {
@@ -606,13 +616,13 @@ try {
       const shop = SHOPS.find(x => x.id === id);
       if (!shop) continue;
       if (s.entry && fl.navNodes[s.entry]) shop.entry = s.entry;
-      if (s.pin) shop.pin = latLngToPercent(s.pin.lat, s.pin.lng);
+      if (isValidLatLng(s.pin)) shop.pin = latLngToPercent(s.pin.lat, s.pin.lng);
     }
     for (const [id, s] of Object.entries(SURVEY.places ?? {})) {
       const pl = PLACES.find(x => x.id === id);
       if (!pl) continue;
       if (s.entry && fl.navNodes[s.entry]) pl.entry = s.entry;
-      if (s.pin) pl.pin = latLngToPercent(s.pin.lat, s.pin.lng);
+      if (isValidLatLng(s.pin)) pl.pin = latLngToPercent(s.pin.lat, s.pin.lng);
     }
     // replaceGraph で略図ノードが消えた場合、参照切れの entry を最寄りノードへ振り直す
     const nearestNodeId = (pin) => {

@@ -1,0 +1,25 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      "$room": {
+        ".read": "$room.matches(/^[A-Z0-9]{4,8}$/)",
+
+        "$uid": {
+          ".write": "$room.matches(/^[A-Z0-9]{4,8}$/) && $uid.matches(/^[a-f0-9]{8}$/)",
+          ".validate": "newData.hasChildren(['name', 't'])",
+
+          "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 24" },
+          "t":    { ".validate": "newData.isNumber() && newData.val() > 1700000000000" },
+          "lat":  { ".validate": "newData.isNumber() && newData.val() >= 34.9 && newData.val() <= 35.1" },
+          "lng":  { ".validate": "newData.isNumber() && newData.val() >= 135.8 && newData.val() <= 136.1" },
+          "acc":  { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000" },
+
+          "$other": { ".validate": false }
+        }
+      }
+    }
+  }
+}
