@@ -1321,7 +1321,7 @@ function startGuidanceTo(shop) {
   closeCard();
   $('drawer').classList.remove('open');
   setRoutePanelCollapsed(false);
-  toast(`${shop.name} への最短経路です。「ナビ開始」で現在地に追従します`);
+  toast(`「${shop.name}」までの経路を表示しました`);
 }
 
 $('card-goto').addEventListener('click', () => {
@@ -1469,7 +1469,7 @@ function exitNav(arrived = false) {
   if (arrived) {
     avatarPlaceId = currentRoute?.toId ?? avatarPlaceId;
     clearRoute();
-    toast('目的地に到着しました！');
+    toast('目的地に到着しました');
   } else {
     setRoutePanelCollapsed(false);
   }
@@ -1674,7 +1674,8 @@ function animate() {
     const on = s._categoryVisible && s.floor === viewFloor; // 表示中フロアのみ描画
     const selected = cardShop === s || hovered === s._mesh;
     s._mesh.visible = on;
-    s._label.visible = on;
+    // 遠景では主要施設のみラベル表示（画面の情報量を抑える）
+    s._label.visible = on && (areaView || s.landmark || selected);
     let labelScale = selected ? 1.1 : detailView ? 1 : areaView ? 0.72 : 0.5;
     let labelOpacity = selected ? 1 : detailView ? 1 : areaView ? 0.92 : 0.78;
     if (navMode) {
@@ -1686,19 +1687,19 @@ function animate() {
     s._label.scale.copy(s._label.userData.detailScale).multiplyScalar(labelScale);
     s._label.material.opacity = labelOpacity;
     s._edges.visible = on;
-    s._edges.material.opacity = selected ? 1 : detailView ? 0.8 : areaView ? 0.48 : 0.24;
-    s._crown.visible = on && (selected || detailView || areaView);
+    s._edges.material.opacity = selected ? 1 : detailView ? 0.8 : areaView ? 0.48 : 0.3;
+    s._crown.visible = on;
     s._crown.material.transparent = true;
-    s._crown.material.opacity = selected ? 1 : detailView ? 0.82 : 0.46;
+    s._crown.material.opacity = selected ? 1 : detailView ? 0.82 : areaView ? 0.55 : 0.45;
     s._mesh.material.opacity = on
-      ? (selected ? 0.75 : detailView ? 0.58 : areaView ? 0.48 : 0.34)
+      ? (selected ? 0.78 : detailView ? 0.62 : areaView ? 0.55 : 0.5)
       : 0.015;
   }
   $('zoom-hint').classList.toggle('hidden', areaView);
 
-  // ラベル浮遊
+  // ラベル浮遊（ごく控えめに）
   for (const l of labelSprites) {
-    if (l.userData.baseY != null) l.position.y = l.userData.baseY + Math.sin(t * 1.6 + l.userData.phase) * 0.35;
+    if (l.userData.baseY != null) l.position.y = l.userData.baseY + Math.sin(t * 1.1 + l.userData.phase) * 0.12;
   }
 
   // プラザ演出
@@ -1784,20 +1785,9 @@ canvas.addEventListener('webglcontextrestored', () => {
 // 起動
 animate();
 
-// 起動時に「いまいる場所」を選ばせ、案内の出発地点にする
-function chooseStartPlace(placeId) {
-  const p = PLACES.find(pl => pl.id === placeId) ?? PLACES[0];
-  avatarPlaceId = p.id;
-  avatar.position.copy(p._pos);
-  setViewFloor('campus', { alsoUser: true });
-  $('floor-picker').classList.add('hidden');
-  toast(`出発地点を「${p.name}」に設定しました。目的地を検索してみましょう`);
-}
-document.querySelectorAll('.floor-picker-btn[data-start]').forEach(btn =>
-  btn.addEventListener('click', () => chooseStartPlace(btn.dataset.start)));
-$('floor-picker-skip').addEventListener('click', () => chooseStartPlace('gate-main'));
-
-// ---- GPSで出発地点を自動検出 ----
+// ---- 起動: すぐにGPSを取得し、現在地から案内を開始する（選択画面なし） ----
+//   取得できない・キャンパス外の場合は正門を出発地点にして続行する。
+//   その後もwatchPositionが動き続けるため、遅れて測位できれば自動で現在地に追従する。
 function waitForGpsFix(ms) {
   return new Promise((resolve) => {
     const t0 = performance.now();
@@ -1808,36 +1798,20 @@ function waitForGpsFix(ms) {
   });
 }
 
-let gpsStartBusy = false;
-async function chooseStartByGps({ silent = false } = {}) {
-  if (gpsStartBusy || $('floor-picker').classList.contains('hidden')) return;
-  gpsStartBusy = true;
-  const btn = $('floor-picker-gps');
-  const span = btn.querySelector('span');
-  const orig = span.textContent;
-  btn.disabled = true;
-  span.textContent = 'GPSで現在地を取得中…';
+async function initStartLocation() {
   startGeolocation();
-  const ok = await waitForGpsFix(silent ? 6000 : 10000);
+  const ok = await waitForGpsFix(9000);
   if (ok) {
     avatar.position.set(geoState.world.x, 0, geoState.world.z);
-    setViewFloor('campus', { alsoUser: true });
-    $('floor-picker').classList.add('hidden');
     const target = avatar.position.clone().setY(0);
-    flyTo(target.clone().add(new THREE.Vector3(0, 64, 50)), target, 1.2);
-    toast('GPSで現在地を設定しました。目的地を検索してみましょう');
+    flyTo(target.clone().add(new THREE.Vector3(0, 64, 50)), target, 1.4);
+    toast('現在地から案内します');
+  } else if (geoState.lat != null) {
+    toast('キャンパス外のため、出発地点を正門にしています');
   } else {
-    btn.disabled = false;
-    span.textContent = orig;
-    if (!silent) {
-      toast(geoState.lat != null
-        ? 'キャンパスの外にいるようです — 出発地点を選んでください'
-        : '位置情報を取得できませんでした — 出発地点を選んでください');
-    }
+    toast('位置情報が使えないため、出発地点を正門にしています');
   }
-  gpsStartBusy = false;
 }
-$('floor-picker-gps').addEventListener('click', () => chooseStartByGps());
 
 // 現地測量モード（?survey）— 通常利用者のペイロードに影響しないよう動的読み込み
 if (new URLSearchParams(location.search).has('survey')) {
@@ -1848,12 +1822,8 @@ if (new URLSearchParams(location.search).has('survey')) {
 
 setTimeout(() => {
   $('loader').classList.add('done');
-  $('floor-picker').classList.remove('hidden'); // まず出発地点を選択
-  // 位置情報が既に許可済みなら、質問せずにGPSで自動検出する（許可ダイアログは出ない）
-  navigator.permissions?.query({ name: 'geolocation' })
-    .then(p => { if (p.state === 'granted') chooseStartByGps({ silent: true }); })
-    .catch(() => { /* Permissions API非対応ブラウザでは手動選択のまま */ });
-  // オープニングカメラ演出
+  // オープニングカメラ演出 → GPS取得
   camera.position.set(-120, 180, 200);
   flyTo(new THREE.Vector3(0, 96, 108), new THREE.Vector3(0, 0, -4), 2.4);
+  initStartLocation();
 }, 600);

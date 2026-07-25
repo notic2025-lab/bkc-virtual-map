@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0c0a10">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%239d1535'/><text x='50' y='56' font-family='Georgia,serif' font-size='58' font-weight='700' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'>R</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260725b">
+<link rel="stylesheet" href="css/style.css?v=20260726">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -39,25 +39,15 @@
   <canvas id="scene"></canvas>
   <div class="world-atmosphere" aria-hidden="true"></div>
 
-  <!-- ヘッダー -->
+  <!-- 検索バー -->
   <header id="topbar">
-    <div class="brand">
-      <span class="brand-mark"><span>BKC</span></span>
-      <div class="brand-txt">
-        <strong>立命館大学 BKC</strong>
-        <small>BIWAKO-KUSATSU · VIRTUAL CAMPUS</small>
-      </div>
-    </div>
-    <div class="topbar-actions">
-      <button id="btn-list" class="chip-btn" title="施設一覧"><svg><use href="#i-grid"/></svg><span>施設一覧</span></button>
-    </div>
+    <button id="quick-destination" type="button" aria-label="目的地を検索">
+      <span class="sb-brand">R</span>
+      <span class="sb-text">どこへ行きますか？</span>
+      <svg class="sb-search" aria-hidden="true"><use href="#i-search"/></svg>
+    </button>
+    <button id="btn-list" class="round-btn" type="button" title="施設一覧"><svg><use href="#i-grid"/></svg></button>
   </header>
-
-  <button id="quick-destination" type="button">
-    <span class="quick-search-icon"><svg><use href="#i-search"/></svg></span>
-    <span><small>EXPLORE BKC CAMPUS</small><strong>どこへ行きますか？</strong></span>
-    <span class="quick-search-arrow"><svg><use href="#i-chevron-right"/></svg></span>
-  </button>
 
   <!-- カテゴリフィルタ -->
   <div id="filters">
@@ -140,7 +130,7 @@
   <!-- 乗換カード（屋外単一マップのため通常は使われないが、ナビ機構の一部として保持） -->
   <div id="transfer-card" class="hidden">
     <div class="transfer-inner">
-      <div class="transfer-icon">🚶</div>
+      <div class="transfer-icon"><svg><use href="#i-walk"/></svg></div>
       <div id="transfer-text"></div>
       <button id="transfer-done" class="primary-btn" type="button">着いた</button>
     </div>
@@ -173,28 +163,12 @@
   <div id="loader">
     <div class="loader-inner">
       <div class="loader-ring"></div>
-      <p>バーチャルキャンパスを構築中…</p>
-    </div>
-  </div>
-
-  <!-- 出発地点の選択（起動時） -->
-  <div id="floor-picker" class="hidden">
-    <div class="floor-picker-inner">
-      <div class="floor-picker-brand"><span class="brand-mark"><span>BKC</span></span></div>
-      <h2>いまどこにいますか？</h2>
-      <p class="floor-picker-sub">GPSで自動検出するか、近い場所を選んでください<br><small>キャンパス案内の出発地点になります</small></p>
-      <div class="floor-picker-list">
-        <button id="floor-picker-gps" class="floor-picker-btn floor-picker-gps" type="button"><b>📍</b><span>GPSで現在地を自動検出（推奨）</span></button>
-        <button class="floor-picker-btn" data-start="gate-main" type="button"><b>正門</b><span>フロンティアアベニュー側のメインゲート</span></button>
-        <button class="floor-picker-btn" data-start="bus" type="button"><b>バス</b><span>バスターミナル（セントラルサーカス前）</span></button>
-        <button class="floor-picker-btn" data-start="gate-east" type="button"><b>東門</b><span>駐輪場・バイク置場側のゲート</span></button>
-      </div>
-      <button id="floor-picker-skip" type="button">わからない（正門から案内）</button>
+      <p>マップを読み込んでいます</p>
     </div>
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260725b"></script>
+<script type="module" src="js/app.js?v=20260726"></script>
 <script>
 // Service Worker（オフラインキャッシュ・再訪時の高速表示）。
 // 対応外・file:// 環境では静かにスキップする。

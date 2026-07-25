@@ -139,7 +139,7 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
   async function setLogging(on) {
     logging = on;
     lastNodeId = null; // 開始・停止のたびに新しいチェーンにする
-    ui.log.textContent = on ? '⏸ 歩行ログ停止' : '▶ 歩行ログ開始';
+    ui.log.textContent = on ? '記録を停止' : '記録を開始';
     ui.log.classList.toggle('sv-active', on);
     if (on) {
       startGeolocation();
@@ -206,9 +206,9 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     #survey-panel {
       position: fixed; z-index: 90; left: 10px; bottom: max(10px, env(safe-area-inset-bottom));
       width: min(320px, calc(100vw - 20px));
-      background: rgba(8,20,30,.93); backdrop-filter: blur(14px);
-      border: 1px solid rgba(56,240,255,.45); border-radius: 18px;
-      padding: 12px 14px; color: #eafcff; font-size: 13px;
+      background: rgba(20,24,28,.95); backdrop-filter: blur(14px);
+      border: 1px solid rgba(56,240,255,.3); border-radius: 16px;
+      padding: 12px 14px; color: #eef4f6; font-size: 13px;
       box-shadow: 0 14px 44px rgba(0,0,0,.5);
     }
     #survey-panel .sv-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; margin-bottom: 6px; }
@@ -223,8 +223,8 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     }
     .sv-btn.sv-primary { background: rgba(56,240,255,.22); }
     .sv-btn.sv-active { background: #22d3ee; color: #06222b; }
-    .sv-btn.sv-danger { flex: 0 0 46px; border-color: rgba(248,113,113,.5); color: #fca5a5; background: rgba(127,29,29,.25); }
-    .sv-btn.sv-small { flex: 0 0 46px; }
+    .sv-btn.sv-danger { flex: 0 0 auto; padding: 0 14px; border-color: rgba(248,113,113,.4); color: #fca5a5; background: rgba(127,29,29,.2); }
+    .sv-btn.sv-small { flex: 0 0 auto; padding: 0 14px; }
     #survey-panel .sv-check { display: flex; gap: 7px; align-items: center; font-size: 11px; color: #9fc9d8; margin-bottom: 8px; }
     #survey-picker {
       position: fixed; inset: 0; z-index: 95; background: rgba(4,12,18,.9); backdrop-filter: blur(8px);
@@ -252,20 +252,20 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
   const panel = document.createElement('div');
   panel.id = 'survey-panel';
   panel.innerHTML = `
-    <div class="sv-head"><span>📐 測量モード</span><span id="sv-gps">GPS待機中</span></div>
+    <div class="sv-head"><span>測量モード</span><span id="sv-gps">GPS待機中</span></div>
     <div class="sv-stats" id="sv-stats"></div>
     <div class="sv-row">
-      <button id="sv-log" class="sv-btn sv-primary" type="button">▶ 歩行ログ開始</button>
-      <button id="sv-node" class="sv-btn sv-small" type="button" title="現在地にノードを追加">📍</button>
-      <button id="sv-undo" class="sv-btn sv-small" type="button" title="直前の記録を取り消す">↩</button>
+      <button id="sv-log" class="sv-btn sv-primary" type="button">記録を開始</button>
+      <button id="sv-node" class="sv-btn sv-small" type="button" title="現在地にノードを追加">＋</button>
+      <button id="sv-undo" class="sv-btn sv-small" type="button" title="直前の記録を取り消す">戻す</button>
     </div>
     <div class="sv-row">
-      <button id="sv-poi" class="sv-btn" type="button">🏢 入口を記録</button>
+      <button id="sv-poi" class="sv-btn" type="button">入口を記録</button>
     </div>
     <label class="sv-check"><input type="checkbox" id="sv-replace"> 略図の通路を置き換える（全域測量後にON）</label>
     <div class="sv-row">
-      <button id="sv-export" class="sv-btn sv-primary" type="button">⬆ エクスポート</button>
-      <button id="sv-clear" class="sv-btn sv-danger" type="button" title="全削除">🗑</button>
+      <button id="sv-export" class="sv-btn sv-primary" type="button">書き出し</button>
+      <button id="sv-clear" class="sv-btn sv-danger" type="button" title="測量データを全削除">削除</button>
     </div>`;
   uiRoot.appendChild(panel);
 
@@ -273,7 +273,7 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
   picker.id = 'survey-picker';
   picker.className = 'hidden';
   picker.innerHTML = `
-    <h3>🏢 どの施設の入口ですか？（近い順）</h3>
+    <h3>どの施設の入口ですか？（近い順）</h3>
     <div id="sv-picker-list"></div>
     <button id="sv-picker-close" class="sv-btn" type="button">閉じる</button>`;
   uiRoot.appendChild(picker);
@@ -340,7 +340,7 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     const total = SHOPS.length + PLACES.length;
     ui.stats.textContent =
       `ノード ${Object.keys(state.nodes).length} ・ 通路 ${state.edges.length} ・ 入口 ${done}/${total}` +
-      (logging ? ' ・ 🔴記録中' : '');
+      (logging ? ' ・ 記録中' : '');
   }
 
   // ---------- 起動 ----------

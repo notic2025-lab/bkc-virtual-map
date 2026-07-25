@@ -4,14 +4,14 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v3-gps-start';
+const CACHE_VERSION = 'bkc-map-v4-redesign';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/style.css?v=20260725b',
-  './js/app.js?v=20260725b',
+  './css/style.css?v=20260726',
+  './js/app.js?v=20260726',
   './js/data.js',
   './js/survey-data.js',
   './js/survey.js',

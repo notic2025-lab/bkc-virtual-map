@@ -544,6 +544,13 @@ export const SHOPS = [
 // 屋外キャンパスは単一マップ（全建物とも floor = 'campus'）
 SHOPS.forEach(s => { s.floor = 'campus'; });
 
+// 遠景でもラベルを出す主要施設（学生の目的地になりやすい建物）
+const LANDMARKS = new Set([
+  'union', 'link', 'media', 'prism', 'across', 'adseminario',
+  'central-arc', 'core-station', 'gym', 'sports-commons', 'quince', 'ccube',
+]);
+SHOPS.forEach(s => { s.landmark = LANDMARKS.has(s.id); });
+
 // ---- 施設・エントランス（経路の出発地点にもなる）----
 export const PLACES = [
   { id: 'gate-main', floor: 'campus', entry: 'GM', name: '正門', kind: 'entrance', pin: { left: 52, top: 95 } },
