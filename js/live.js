@@ -192,8 +192,23 @@ export async function initLive(deps, joinCode = null) {
     await startSession(setup.code, setup.name);
   } catch (e) {
     console.warn('live share failed', e);
-    ctx.toast('ライブ共有に接続できませんでした（Realtime Databaseの設定を確認してください）', 5000);
+    ctx.toast(liveErrorText(e), 6500);
   }
+}
+
+// 失敗原因を、利用者が自分で対処できる言葉に変換する
+function liveErrorText(e) {
+  const s = `${e?.code ?? ''} ${e?.message ?? e ?? ''}`;
+  if (/permission[_ ]?denied/i.test(s)) {
+    return 'サーバーに書き込みを拒否されました（Realtime Databaseのルール設定を確認してください）';
+  }
+  if (e instanceof TypeError || /module|import|script|fetch/i.test(s)) {
+    return '共有機能を読み込めませんでした。広告ブロック等で www.gstatic.com が遮断されていないか確認してください';
+  }
+  if (/connect timeout/.test(s)) {
+    return 'サーバーに接続できませんでした。このWi-Fiでは通信が制限されている可能性があります。モバイル回線でもお試しください';
+  }
+  return `ライブ共有に接続できませんでした（${s.trim().slice(0, 80) || '原因不明'}）`;
 }
 
 async function startSession(code, name) {
@@ -215,14 +230,29 @@ async function startSession(code, name) {
     t: Date.now(),
     ...(g.lat != null ? { lat: Number(g.lat.toFixed(6)), lng: Number(g.lng.toFixed(6)), acc: Math.round(g.accuracy ?? 0) } : {}),
   };
+  const trySet = (ms) => Promise.race([
+    fb.set(myRef, first),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('connect timeout')), ms)),
+  ]);
   try {
-    await Promise.race([
-      fb.set(myRef, first),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('connect timeout')), 8000)),
-    ]);
+    await trySet(8000);
   } catch (e) {
-    session = null;
-    throw e;
+    // タイムアウト時は、WebSocketが塞がれている回線（一部の学内・公衆Wi-Fi）を疑い、
+    // HTTP長輪講（long-polling）へ切り替えて一度だけ再接続を試す
+    if (String(e?.message).includes('connect timeout') && typeof fb.forceLongPolling === 'function') {
+      try {
+        fb.forceLongPolling();
+        fb.goOffline(db);
+        fb.goOnline(db);
+        await trySet(10000);
+      } catch (e2) {
+        session = null;
+        throw e2;
+      }
+    } else {
+      session = null;
+      throw e;
+    }
   }
 
   session.unsub = onValue(roomRef, (snap) => updateFriends(snap.val() ?? {}), (err) => {

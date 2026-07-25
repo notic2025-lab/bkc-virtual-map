@@ -2106,7 +2106,7 @@ async function startLiveShare(code = null) {
   if (liveShareLoading) return;
   liveShareLoading = true;
   try {
-    const m = await import('./live.js?v=20260728k');
+    const m = await import('./live.js?v=20260729a');
     await m.initLive({
       scene, geoState, startGeolocation, toast, showRoute, PLACES, nearestNode,
       makeLabelSprite, isMobileDevice, openShareSheet,
