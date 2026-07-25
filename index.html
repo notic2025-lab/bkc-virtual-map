@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#f5f3ee">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%239d1535'/><text x='50' y='56' font-family='Georgia,serif' font-size='58' font-weight='700' fill='%23ffffff' text-anchor='middle' dominant-baseline='middle'>R</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20260728d">
+<link rel="stylesheet" href="css/style.css?v=20260728e">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -172,6 +172,16 @@
     </div>
   </div>
 
+  <!-- 位置共有の選択シート -->
+  <div id="share-sheet" class="hidden">
+    <div class="sheet-inner">
+      <h3>位置を共有</h3>
+      <button id="share-snapshot" class="sheet-btn" type="button"><b>現在地リンクを送る</b><small>いまの場所を1回だけ共有。相手はリンクを開くだけで経路案内される</small></button>
+      <button id="share-live" class="sheet-btn" type="button"><b>ライブ共有（グループ）</b><small>コードを知っている友達同士で、お互いの位置をリアルタイムに表示</small></button>
+      <button id="share-cancel" class="sheet-btn sheet-cancel" type="button">キャンセル</button>
+    </div>
+  </div>
+
   <!-- ローディング -->
   <div id="loader">
     <div class="loader-inner">
@@ -182,7 +192,7 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=20260728d"></script>
+<script type="module" src="js/app.js?v=20260728e"></script>
 <script>
 // Service Worker（オフラインキャッシュ・再訪時の高速表示）。
 // 対応外・file:// 環境では静かにスキップする。

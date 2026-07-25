@@ -1923,7 +1923,31 @@ function shareMyLocation() {
     copyLink();
   }
 }
-$('btn-share').addEventListener('click', shareMyLocation);
+// 共有ボタン → 共有方法の選択シート（1回きりのリンク or ライブ共有）
+$('btn-share').addEventListener('click', () => $('share-sheet').classList.remove('hidden'));
+$('share-cancel').addEventListener('click', () => $('share-sheet').classList.add('hidden'));
+$('share-sheet').addEventListener('click', (e) => {
+  if (e.target.id === 'share-sheet') $('share-sheet').classList.add('hidden');
+});
+$('share-snapshot').addEventListener('click', () => {
+  $('share-sheet').classList.add('hidden');
+  shareMyLocation();
+});
+$('share-live').addEventListener('click', () => {
+  $('share-sheet').classList.add('hidden');
+  startLiveShare();
+});
+
+// ライブ共有（Firebase）は使うときだけ動的読み込み。通常利用者のペイロードに影響しない
+async function startLiveShare(code = null) {
+  try {
+    const m = await import('./live.js');
+    m.initLive({ scene, geoState, startGeolocation, toast, showRoute, PLACES, nearestNode, makeLabelSprite, isMobileDevice }, code);
+  } catch (e) {
+    console.warn(e);
+    toast('ライブ共有を読み込めませんでした（通信環境をご確認ください）');
+  }
+}
 
 // 受信側: ?meet=lat,lng を「友達の位置」として登録し、マーカーを立てる
 function setupMeetPoint() {
@@ -2025,5 +2049,8 @@ setTimeout(() => {
       const ago = meetPoint.mins != null && meetPoint.mins > 0 ? `（${meetPoint.mins}分前に共有）` : '';
       if (showRoute('meet')) toast(`「${meetPoint.place.name}」へ案内します${ago}`, 3800);
     }
+    // 招待リンク（?join=CODE）で開かれた場合はライブ共有グループに参加
+    const joinCode = new URLSearchParams(location.search).get('join');
+    if (joinCode && /^[A-Za-z0-9]{4,8}$/.test(joinCode)) startLiveShare(joinCode.toUpperCase());
   });
 }, 600);
