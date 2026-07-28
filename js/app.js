@@ -842,7 +842,8 @@ function buildRouteLegs(startPos, startFloor, toId) {
     }
     prevKey = key;
   }
-  cur.points.push(to._pos.clone());
+  // みんなの到着地点から補正された実測入口（_navPos）があればそちらをゴールにする
+  cur.points.push((to._navPos ?? to._pos).clone());
   legs.push(cur);
 
   // 各レッグ内の連続する近接点を除去
@@ -1697,6 +1698,8 @@ function exitNav(arrived = false) {
   flyTo(target.clone().add(new THREE.Vector3(0, 64, 50)), target, 1.1);
   if (arrived) {
     avatarPlaceId = currentRoute?.toId ?? avatarPlaceId;
+    // 到着地点を匿名集計へ（みんなの到着位置の平均が「本当の入口」になっていく）
+    walkLearn.mod?.reportArrival?.(avatarPlaceId);
     clearRoute();
     toast('目的地に到着しました');
   } else {
@@ -2263,7 +2266,7 @@ async function bootWalkLearn(full) {
   walkLearn.loading = true;
   try {
     if (!walkLearn.mod) {
-      const m = await import('./walk-learn.js?v=20260729d');
+      const m = await import('./walk-learn.js?v=20260730a');
       m.setup({
         THREE, scene, geoState, nodePos, adj, addEdge,
         setEdgeFactor: (a, b, f) => { edgeFactor[wKey(a, b)] = f; },

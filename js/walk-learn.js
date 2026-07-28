@@ -2,7 +2,10 @@
 // クラウド歩行学習 — 歩けば歩くほど地図と経路が賢くなる
 //   仕組み:
 //   1) GPS追従中のユーザーの移動を「約6mグリッドのセル間遷移カウント」として
-//      匿名集計し、Firebase RTDB (walk/t) へ increment 送信する。
+//      匿名集計し、Firebase RTDB (walk/g) へ increment 送信する。
+//      グリッドは緯度経度ベースの固定アンカーなので、GEO校正後もデータは有効。
+//      さらにナビ到着時のGPS位置を施設ごとに集計し (walk/e)、
+//      「本当の入口」を全ユーザーの到着地点から自動測量する。
 //      個人ID・タイムスタンプ・軌跡そのものは一切送らない。
 //   2) 集計データを読み込み、
 //      - 既存の通路: よく歩かれている区間ほど A* コストを割引（実際に人が
@@ -14,7 +17,7 @@
 //   3) 結果は localStorage にキャッシュし、次回はオフラインでも効く。
 //   Firebase接続はこのモジュール内だけ。失敗しても本体は略図グラフで動く。
 // ============================================================
-import { gpsToWorld, toWorld, SHOPS, MAP_W, MAP_D } from './data.js';
+import { gpsToWorld, toWorld, SHOPS, PLACES, MAP_W, MAP_D } from './data.js';
 import { FIREBASE_CONFIG } from './firebase-config.js';
 
 const CELL = 1.5;              // 1セル = 1.5ワールド単位 ≈ 6m
@@ -22,7 +25,7 @@ const ACC_LIMIT_M = 20;        // これより精度が悪い測位は学習に�
 const SAMPLE_MS = 2500;        // 移動サンプリング間隔
 const FLUSH_MS = 15000;        // 集計送信間隔
 const MAX_JUMP_CELLS = 3;      // これを超えるセル移動はGPSジャンプとして無視
-const CACHE_KEY = 'bkc-walk-cache';
+const CACHE_KEY = 'bkc-walk-cache-v2'; // v2: 緯度経度グリッド＋入口データ形式
 const CACHE_TTL = 72 * 3600 * 1000;  // 3日キャッシュ（無料枠のダウンロード量を節約）
 const POPULAR_MIN = 4;         // この回数以上でエッジ割引・表示の対象
 const SHORTCUT_MIN = 8;        // この回数以上で「みんなの道」としてグラフに追加
@@ -79,6 +82,25 @@ const cellCenter = (id) => {
 };
 const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
+// ---- 地理グリッド（サーバーに保存する座標系） ----
+// GEO校正（回転・縮尺・原点の調整）と完全に独立した緯度経度ベースの固定グリッド。
+// こうすることで、後から地図の縮尺を校正しても蓄積済みデータは無効にならない。
+// ※このアンカー値は恒久固定。変更すると全データの位置がズレる
+const ALAT = 34.9822, ALNG = 135.9617, CELL_M = 6;
+const LAT_STEP = CELL_M / 111320;
+const LNG_STEP = CELL_M / (111320 * Math.cos(ALAT * Math.PI / 180));
+const geoCellOf = (lat, lng) => ({
+  gx: Math.round((lng - ALNG) / LNG_STEP),
+  gy: Math.round((lat - ALAT) / LAT_STEP),
+});
+const geoCellId = (c) => `g${c.gx}_${c.gy}`;
+const GEO_CELL_RE = /^g(-?\d+)_(-?\d+)$/;
+function geoCellWorld(id) {
+  const m = GEO_CELL_RE.exec(id);
+  if (!m) return null;
+  return gpsToWorld(ALAT + Number(m[2]) * LAT_STEP, ALNG + Number(m[1]) * LNG_STEP);
+}
+
 // ------------------------------------------------------------
 // 収集（匿名セル遷移カウント）
 // ------------------------------------------------------------
@@ -91,18 +113,18 @@ function sampleMove() {
   if (g.lat == null || !g.ok || (g.accuracy ?? 999) > ACC_LIMIT_M) return;
   const w = gpsToWorld(g.lat, g.lng);
   if (Math.abs(w.x) > MAP_W / 2 || Math.abs(w.z) > MAP_D / 2) return;
-  const cur = cellOf(w.x, w.z);
+  const cur = geoCellOf(g.lat, g.lng); // 保存は緯度経度グリッド（GEO校正と独立）
   if (!lastCell) { lastCell = cur; return; }
-  const dx = cur.cx - lastCell.cx, dz = cur.cz - lastCell.cz;
-  if (dx === 0 && dz === 0) return;
-  if (Math.max(Math.abs(dx), Math.abs(dz)) > MAX_JUMP_CELLS) { lastCell = cur; return; } // GPSジャンプ
+  const dx = cur.gx - lastCell.gx, dy = cur.gy - lastCell.gy;
+  if (dx === 0 && dy === 0) return;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) > MAX_JUMP_CELLS) { lastCell = cur; return; } // GPSジャンプ
   // 途中のセルを補間し、連続する遷移として記録する
-  const steps = Math.max(Math.abs(dx), Math.abs(dz));
+  const steps = Math.max(Math.abs(dx), Math.abs(dy));
   let prev = lastCell;
   for (let i = 1; i <= steps; i++) {
-    const c = { cx: Math.round(lastCell.cx + dx * i / steps), cz: Math.round(lastCell.cz + dz * i / steps) };
-    if (c.cx === prev.cx && c.cz === prev.cz) continue;
-    const key = pairKey(cellId(prev), cellId(c));
+    const c = { gx: Math.round(lastCell.gx + dx * i / steps), gy: Math.round(lastCell.gy + dy * i / steps) };
+    if (c.gx === prev.gx && c.gy === prev.gy) continue;
+    const key = pairKey(geoCellId(prev), geoCellId(c));
     if (pending.size < 200 || pending.has(key)) pending.set(key, (pending.get(key) ?? 0) + 1);
     prev = c;
   }
@@ -116,7 +138,7 @@ async function flush() {
   try {
     const payload = {};
     for (const [key, n] of batch) payload[key] = { '.sv': { increment: Math.min(n, 50) } };
-    await restFetch('walk/t', {
+    await restFetch('walk/g', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -132,17 +154,19 @@ async function flush() {
 function readCache() {
   try {
     const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-    return c && c.t ? c : null;
+    return c && c.data ? c : null;
   } catch { return null; }
 }
-function writeCache(t) {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), t })); } catch { /* 容量超過でも継続 */ }
+function writeCache(data) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data })); } catch { /* 容量超過でも継続 */ }
 }
 
 async function fetchRemote() {
-  const t = (await restFetch('walk/t')) ?? {};
-  writeCache(t);
-  return t;
+  // g = 通行量（緯度経度グリッド） / e = 施設ごとの到着地点ヒストグラム
+  const w = (await restFetch('walk')) ?? {};
+  const data = { g: w.g ?? {}, e: w.e ?? {} };
+  writeCache(data);
+  return data;
 }
 
 // ------------------------------------------------------------
@@ -164,11 +188,24 @@ function buildingRects() {
 }
 const inRect = (r, x, z) => Math.abs(x - r.x) <= r.hw && Math.abs(z - r.z) <= r.hd;
 
-function apply(t) {
-  if (applied || !t) return;
-  const pairs = Object.entries(t)
-    .filter(([k, v]) => Number.isFinite(v) && v > 0 && /^c-?\d+_-?\d+\|c-?\d+_-?\d+$/.test(k))
-    .slice(0, 20000);
+function apply(data) {
+  if (applied || !data) return;
+  // 緯度経度グリッドの遷移を現在のGEO変換でワールドグリッドへ写像する
+  // （GEO校正後も、蓄積データがそのまま新しい地図位置に正しく乗る）
+  const worldPairs = new Map();
+  for (const [k, v] of Object.entries(data.g ?? {})) {
+    if (!Number.isFinite(v) || v <= 0 || !/^g-?\d+_-?\d+\|g-?\d+_-?\d+$/.test(k)) continue;
+    if (worldPairs.size >= 20000) break;
+    const [ga, gb] = k.split('|');
+    const wa = geoCellWorld(ga), wb = geoCellWorld(gb);
+    if (!wa || !wb) continue;
+    const a = cellId(cellOf(wa.x, wa.z)), b = cellId(cellOf(wb.x, wb.z));
+    if (a === b) continue;
+    const key = pairKey(a, b);
+    worldPairs.set(key, (worldPairs.get(key) ?? 0) + v);
+  }
+  const pairs = [...worldPairs.entries()];
+  applyEntrances(data.e); // 入口補正は冪等（何度適用しても同じ結果）
   if (!pairs.length) return;
   applied = true;
 
@@ -262,6 +299,64 @@ function apply(t) {
   console.info(`walk-learn: 歩行データ ${pairs.length} 区間を適用（みんなの道 ${addedEdges} 区間を追加）`);
 }
 
+// ------------------------------------------------------------
+// 入口の自動測量 — ナビ到着時のGPS位置の集計から「本当の入口」を推定する
+//   5サンプル以上たまった施設は、経路のゴール地点（_navPos）と入口ノード
+//   （entry）を、みんなの到着地点の加重平均へ補正する
+// ------------------------------------------------------------
+const MIN_ENTRANCE_SAMPLES = 5;
+function applyEntrances(e) {
+  if (!e) return 0;
+  const pois = [...SHOPS, ...PLACES];
+  let fixed = 0;
+  for (const [poiId, cells] of Object.entries(e)) {
+    const poi = pois.find(p => p.id === poiId);
+    if (!poi || !cells || typeof cells !== 'object') continue;
+    const entries = Object.entries(cells)
+      .filter(([k, v]) => Number.isFinite(v) && v > 0 && GEO_CELL_RE.test(k));
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+    if (total < MIN_ENTRANCE_SAMPLES) continue;
+    // 最多セルの近傍（±3セル≈18m）だけで加重平均 → 単発の異常値・いたずらに強い
+    const top = entries.reduce((a, b) => (b[1] > a[1] ? b : a));
+    const tm = GEO_CELL_RE.exec(top[0]);
+    let sx = 0, sz = 0, sw = 0;
+    for (const [k, v] of entries) {
+      const m = GEO_CELL_RE.exec(k);
+      if (Math.abs(Number(m[1]) - Number(tm[1])) > 3 || Math.abs(Number(m[2]) - Number(tm[2])) > 3) continue;
+      const w = geoCellWorld(k);
+      sx += w.x * v; sz += w.z * v; sw += v;
+    }
+    if (!sw) continue;
+    const ex = sx / sw, ez = sz / sw;
+    poi._navPos = ctx.makeVec(ex, ez);
+    // 実測入口の最寄り通路ノードを入口ノードにする（学習ノードも対象）
+    let best = null, bd = Infinity;
+    for (const [id, p] of Object.entries(ctx.nodePos)) {
+      const d = Math.hypot(p.x - ex, p.z - ez);
+      if (d < bd) { bd = d; best = id; }
+    }
+    if (best && bd <= 12) poi.entry = best.split(':')[1];
+    fixed++;
+  }
+  if (fixed) console.info(`walk-learn: ${fixed} 施設の入口をみんなの到着地点で補正`);
+  return fixed;
+}
+
+// ナビ到着時に app.js から呼ばれる（匿名・座標は6mセルに量子化してから送信）
+export function reportArrival(poiId) {
+  try {
+    const g = ctx?.geoState;
+    if (!poiId || !g || g.lat == null || !g.ok || (g.accuracy ?? 99) > 15) return;
+    if (!/^[a-z0-9-]{1,32}$/.test(poiId)) return;
+    const cell = geoCellId(geoCellOf(g.lat, g.lng));
+    restFetch(`walk/e/${poiId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [cell]: { '.sv': { increment: 1 } } }),
+    }).catch(() => { /* 収集は任意機能 */ });
+  } catch { /* noop */ }
+}
+
 // 「みんなの道」の可視化 — よく歩かれている区間ほど濃い金色のライン
 function drawOverlay(pairs, cellCount) {
   const THREE = ctx.THREE;
@@ -299,7 +394,7 @@ function drawOverlay(pairs, cellCount) {
 // 起動時: キャッシュがあればネットワークなしで即適用（全ユーザーの経路が賢くなる）
 export function applyCached() {
   const c = readCache();
-  if (c) apply(c.t);
+  if (c) apply(c.data);
 }
 
 // GPS追従が始まったら: 最新データを取得して適用し、匿名収集を開始
@@ -308,11 +403,11 @@ export async function start() {
   collecting = true;
   const c = readCache();
   if (c && Date.now() - c.at < CACHE_TTL) {
-    apply(c.t);
+    apply(c.data);
     fetchRemote().catch(() => {}); // 次回セッション用にキャッシュだけ更新
   } else {
     try { apply(await fetchRemote()); }
-    catch { if (c) apply(c.t); }   // 取得失敗時は古いキャッシュで代用
+    catch { if (c) apply(c.data); }  // 取得失敗時は古いキャッシュで代用
   }
   setInterval(sampleMove, SAMPLE_MS);
   setInterval(flush, FLUSH_MS);
