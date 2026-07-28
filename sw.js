@@ -4,15 +4,15 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v22-survey-points';
+const CACHE_VERSION = 'bkc-map-v23-crowd-spots';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/style.css?v=20260728k',
-  './js/app.js?v=20260730a',
-  './js/walk-learn.js?v=20260730a',
+  './js/app.js?v=20260730b',
+  './js/walk-learn.js?v=20260730b',
   './js/data.js',
   './js/survey-data.js',
   './js/firebase-config.js',

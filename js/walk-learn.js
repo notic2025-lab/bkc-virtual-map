@@ -17,7 +17,7 @@
 //   3) 結果は localStorage にキャッシュし、次回はオフラインでも効く。
 //   Firebase接続はこのモジュール内だけ。失敗しても本体は略図グラフで動く。
 // ============================================================
-import { gpsToWorld, toWorld, SHOPS, PLACES, MAP_W, MAP_D } from './data.js';
+import { gpsToWorld, toWorld, worldToPercent, SHOPS, PLACES, CATEGORIES, MAP_W, MAP_D } from './data.js';
 import { FIREBASE_CONFIG } from './firebase-config.js';
 
 const CELL = 1.5;              // 1セル = 1.5ワールド単位 ≈ 6m
@@ -162,9 +162,9 @@ function writeCache(data) {
 }
 
 async function fetchRemote() {
-  // g = 通行量（緯度経度グリッド） / e = 施設ごとの到着地点ヒストグラム
+  // g = 通行量（緯度経度グリッド） / e = 到着地点ヒストグラム / p = みんなの登録スポット
   const w = (await restFetch('walk')) ?? {};
-  const data = { g: w.g ?? {}, e: w.e ?? {} };
+  const data = { g: w.g ?? {}, e: w.e ?? {}, p: w.p ?? {} };
   writeCache(data);
   return data;
 }
@@ -206,6 +206,7 @@ function apply(data) {
   }
   const pairs = [...worldPairs.entries()];
   applyEntrances(data.e); // 入口補正は冪等（何度適用しても同じ結果）
+  applySpots(data.p);     // みんなの登録スポット（追加済みIDはスキップ）
   if (!pairs.length) return;
   applied = true;
 
@@ -342,6 +343,147 @@ function applyEntrances(e) {
   return fixed;
 }
 
+// ------------------------------------------------------------
+// みんなの登録スポット — 誰でも「現在地に駐輪場」等を登録でき、全ユーザーに反映
+//   walk/p/{ランダムID} = { n: 名前, c: カテゴリ, g: 6mセル }
+//   同名・近接（≈30m）の登録は1つに統合（重複・位置ブレ・投票を吸収）
+// ------------------------------------------------------------
+const spotIds = new Set();
+const normName = (s) => s.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+const cleanName = (s) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 24);
+
+function applySpots(p) {
+  if (!p || !ctx.addCrowdSpot) return;
+  const items = [];
+  for (const [id, s] of Object.entries(p)) {
+    if (items.length >= 600) break;
+    if (!/^p[a-f0-9]{8}$/.test(id)) continue;
+    const name = cleanName(s?.n);
+    if (!name) continue;
+    const w = geoCellWorld(String(s.g ?? ''));
+    if (!w || Math.abs(w.x) > MAP_W / 2 || Math.abs(w.z) > MAP_D / 2) continue;
+    items.push({ id, name, key: normName(name), cat: typeof s.c === 'string' ? s.c : 'life', x: w.x, z: w.z });
+  }
+  const groups = [];
+  for (const it of items.sort((a, b) => (a.id < b.id ? -1 : 1))) {
+    const grp = groups.find(x => x.key === it.key && Math.hypot(x.x / x.n - it.x, x.z / x.n - it.z) <= 7.5);
+    if (grp) { grp.n++; grp.x += it.x; grp.z += it.z; }
+    else groups.push({ id: it.id, key: it.key, name: it.name, cat: it.cat, x: it.x, z: it.z, n: 1 });
+  }
+  let added = 0;
+  for (const grp of groups.slice(0, 300)) {
+    if (spotIds.has(grp.id)) continue;
+    spotIds.add(grp.id);
+    const x = grp.x / grp.n, z = grp.z / grp.n;
+    let best = null, bd = Infinity;
+    for (const [nid, np] of Object.entries(ctx.nodePos)) {
+      const d = Math.hypot(np.x - x, np.z - z);
+      if (d < bd) { bd = d; best = nid; }
+    }
+    if (ctx.addCrowdSpot({ id: 'cs-' + grp.id, name: grp.name, cat: grp.cat, pin: worldToPercent(x, z), entry: best?.split(':')[1] })) added++;
+  }
+  if (added) console.info(`walk-learn: みんなの登録スポット ${added} 件を表示`);
+}
+
+// スポット登録（本編の📍ボタンから呼ばれる。成功すると全ユーザーに反映される）
+export async function registerSpot(rawName, cat) {
+  const g = ctx.geoState;
+  const name = cleanName(rawName);
+  if (!name) { ctx.toast('スポット名を入力してください'); return false; }
+  if (g.lat == null || !g.ok) { ctx.toast('キャンパス内でGPSが取れた状態で登録できます'); return false; }
+  if ((g.accuracy ?? 99) > 25) { ctx.toast(`GPS精度が不足しています（±${Math.round(g.accuracy)}m）。空の見える場所でお試しください`); return false; }
+  if (!CATEGORIES[cat]) cat = 'life';
+  const id = 'p' + Array.from(crypto.getRandomValues(new Uint8Array(4)), b => b.toString(16).padStart(2, '0')).join('');
+  const cell = geoCellId(geoCellOf(g.lat, g.lng));
+  try {
+    await restFetch(`walk/p/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ n: name, c: cat, g: cell }),
+    });
+  } catch {
+    ctx.toast('登録を送信できませんでした。通信環境を確認してください');
+    return false;
+  }
+  // キャッシュへ反映（3日キャッシュ中の再訪でも表示されるように）
+  const c = readCache();
+  if (c) { c.data.p = { ...(c.data.p ?? {}), [id]: { n: name, c: cat, g: cell } }; writeCache(c.data); }
+  // ローカルへ即時反映（同名・近接スポットが既にあれば投票扱いとして重複追加しない）
+  const w = geoCellWorld(cell);
+  const dup = SHOPS.some(s => {
+    if (normName(s.name) !== normName(name)) return false;
+    const sw = toWorld(s.pin.left, s.pin.top);
+    return Math.hypot(sw.x - w.x, sw.z - w.z) <= 7.5;
+  });
+  if (!dup && ctx.addCrowdSpot) {
+    spotIds.add(id);
+    let best = null, bd = Infinity;
+    for (const [nid, np] of Object.entries(ctx.nodePos)) {
+      const d = Math.hypot(np.x - w.x, np.z - w.z);
+      if (d < bd) { bd = d; best = nid; }
+    }
+    ctx.addCrowdSpot({ id: 'cs-' + id, name, cat, pin: worldToPercent(w.x, w.z), entry: best?.split(':')[1] });
+  }
+  ctx.toast(`「${name}」を登録しました。全ユーザーの地図に反映されます`, 4200);
+  return true;
+}
+
+// 登録フォーム（スタイルはこのモジュール内で完結）
+export function openSpotForm() {
+  const g = ctx.geoState;
+  if (g.lat == null) { ctx.startGeolocation?.(); ctx.toast('GPSを取得しています。少し待ってからもう一度お試しください'); return; }
+  if (!g.ok) { ctx.toast('スポット登録はキャンパス内でのみ利用できます'); return; }
+  document.getElementById('spot-form')?.remove();
+  if (!document.getElementById('spot-form-style')) {
+    const st = document.createElement('style');
+    st.id = 'spot-form-style';
+    st.textContent = `
+      #spot-form { position: fixed; inset: 0; z-index: 92; display: grid; place-items: center;
+        padding: 16px; background: rgba(30,35,32,.45); backdrop-filter: blur(6px); }
+      #spot-form .spf { width: min(340px, 100%); display: grid; gap: 10px; background: #fffefa;
+        border: 1px solid rgba(33,39,42,.12); border-radius: 16px; padding: 18px;
+        box-shadow: 0 20px 60px rgba(30,35,32,.25); }
+      #spot-form h3 { font-size: 16px; color: #21272a; }
+      #spot-form p { font-size: 12px; color: #6b7480; line-height: 1.6; }
+      #spot-form label { font-size: 12px; font-weight: 700; color: #21272a; }
+      #spot-form input, #spot-form select { width: 100%; min-height: 46px; border-radius: 10px;
+        padding: 0 12px; border: 1px solid rgba(33,39,42,.2); background: #f4f2ed;
+        color: #21272a; font: 600 14px/1.2 inherit; }
+      #spot-form .spf-save { min-height: 48px; border: 0; border-radius: 10px; cursor: pointer;
+        background: #8d1937; color: #fff; font: 700 14px/1 inherit; }
+      #spot-form .spf-cancel { min-height: 44px; border: 0; background: none; cursor: pointer;
+        color: #6b7480; font: 600 13px/1 inherit; text-decoration: underline; }`;
+    document.head.appendChild(st);
+  }
+  const el = document.createElement('div');
+  el.id = 'spot-form';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.innerHTML = `
+    <div class="spf">
+      <h3>現在地にスポットを登録</h3>
+      <p>駐輪場・自販機・喫煙所など、地図に無い場所を登録すると全ユーザーの地図と検索に反映されます（±${Math.round(g.accuracy ?? 0)}m）。</p>
+      <div><label for="spf-name">名前</label>
+      <input id="spf-name" type="text" maxlength="24" placeholder="例：第一駐輪場" autocomplete="off"></div>
+      <div><label for="spf-cat">カテゴリ</label>
+      <select id="spf-cat">${Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}"${k === 'life' ? ' selected' : ''}>${c.label}</option>`).join('')}</select></div>
+      <button class="spf-save" type="button">この場所に登録</button>
+      <button class="spf-cancel" type="button">キャンセル</button>
+    </div>`;
+  (document.getElementById('app') ?? document.body).appendChild(el);
+  const close = () => el.remove();
+  el.addEventListener('click', (e) => { if (e.target === el) close(); });
+  el.querySelector('.spf-cancel').addEventListener('click', close);
+  el.querySelector('.spf-save').addEventListener('click', async () => {
+    const btn = el.querySelector('.spf-save');
+    btn.disabled = true;
+    const ok = await registerSpot(el.querySelector('#spf-name').value, el.querySelector('#spf-cat').value);
+    btn.disabled = false;
+    if (ok) close();
+  });
+  setTimeout(() => el.querySelector('#spf-name').focus(), 60);
+}
+
 // ナビ到着時に app.js から呼ばれる（匿名・座標は6mセルに量子化してから送信）
 export function reportArrival(poiId) {
   try {
@@ -397,18 +539,21 @@ export function applyCached() {
   if (c) apply(c.data);
 }
 
-// GPS追従が始まったら: 最新データを取得して適用し、匿名収集を開始
+// データ適用のみ（収集なし）。キャッシュが新しければネット不要、
+// 無ければ軽量フェッチ（gzip数十KB・3日キャッシュ）。GPSなしの利用者にも
+// みんなの道・入口補正・登録スポットが届く
+export async function ensureData() {
+  const c = readCache();
+  if (c && Date.now() - c.at < CACHE_TTL) { apply(c.data); return; }
+  try { apply(await fetchRemote()); }
+  catch { if (c) apply(c.data); }  // 取得失敗時は古いキャッシュで代用
+}
+
+// GPS追従が始まったら: データ適用に加えて匿名収集を開始
 export async function start() {
   if (collecting) return;
   collecting = true;
-  const c = readCache();
-  if (c && Date.now() - c.at < CACHE_TTL) {
-    apply(c.data);
-    fetchRemote().catch(() => {}); // 次回セッション用にキャッシュだけ更新
-  } else {
-    try { apply(await fetchRemote()); }
-    catch { if (c) apply(c.data); }  // 取得失敗時は古いキャッシュで代用
-  }
+  await ensureData();
   setInterval(sampleMove, SAMPLE_MS);
   setInterval(flush, FLUSH_MS);
   addEventListener('pagehide', () => { flush(); });

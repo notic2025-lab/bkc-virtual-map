@@ -387,7 +387,8 @@ function monogramLogo(shop) {
 }
 SHOPS.forEach(s => { s.logo = monogramLogo(s); });
 
-for (const shop of SHOPS) {
+// 建物1棟分の3D表現を生成する（起動時の全棟生成と、みんなの登録スポットの動的追加で共用）
+function buildShopVisual(shop) {
   const { x, z } = toWorld(shop.pin.left, shop.pin.top);
   const fy = FLOORS[shop.floor].y;
   const col = CATEGORIES[shop.cat].color;
@@ -446,6 +447,27 @@ for (const shop of SHOPS) {
   shop._label = label;
   shop._categoryVisible = true;
   shop._pos = new THREE.Vector3(x, fy, z);
+}
+SHOPS.forEach(buildShopVisual);
+
+// みんなの登録スポット（walk-learn.js がサーバーから取得・登録時に呼ぶ）
+// 既存IDとの衝突や不正カテゴリはここで最終ガードする
+function addCrowdSpot(def) {
+  if (!def || typeof def.name !== 'string' || !def.name.trim()) return null;
+  if (SHOPS.some(s => s.id === def.id) || PLACES.some(p => p.id === def.id)) return null;
+  const shop = {
+    id: def.id, floor: 'campus',
+    name: def.name.slice(0, 24), en: '', tag: 'みんなの登録スポット',
+    cat: CATEGORIES[def.cat] ? def.cat : 'life',
+    pin: def.pin, size: { w: 3, d: 3, h: 1.2 },
+    entry: def.entry,
+    desc: 'ユーザーによって現地登録されたスポット。',
+    url: 'https://www.ritsumei.ac.jp/',
+  };
+  shop.logo = monogramLogo(shop);
+  SHOPS.push(shop);
+  buildShopVisual(shop);
+  return shop;
 }
 
 // 装飾建物
@@ -1203,6 +1225,14 @@ $('btn-locate').addEventListener('click', () => {
   frameFromCurrentPosition(0.65);
   toast(geoState.ok ? '現在地を表示しました' : '現在地を取得中です');
   startGeolocation();
+});
+
+// 現在地にスポットを登録（誰でも・その場で全ユーザーに反映される）
+$('btn-add-spot').addEventListener('click', async () => {
+  startGeolocation();
+  await bootWalkLearn(false); // モジュール読込（未ロード時）
+  if (walkLearn.mod?.openSpotForm) walkLearn.mod.openSpotForm();
+  else toast('スポット登録を読み込めませんでした。通信環境を確認してください');
 });
 
 $('btn-clear').addEventListener('click', () => { exitNav(false); clearRoute(); });
@@ -2266,11 +2296,12 @@ async function bootWalkLearn(full) {
   walkLearn.loading = true;
   try {
     if (!walkLearn.mod) {
-      const m = await import('./walk-learn.js?v=20260730a');
+      const m = await import('./walk-learn.js?v=20260730b');
       m.setup({
         THREE, scene, geoState, nodePos, adj, addEdge,
         setEdgeFactor: (a, b, f) => { edgeFactor[wKey(a, b)] = f; },
         makeVec: (x, z) => new THREE.Vector3(x, 0, z),
+        addCrowdSpot, toast, startGeolocation,
       });
       walkLearn.mod = m;
     }
@@ -2278,14 +2309,14 @@ async function bootWalkLearn(full) {
       walkLearn.started = true;
       await walkLearn.mod.start();
     } else {
-      walkLearn.mod.applyCached();
+      await walkLearn.mod.ensureData();
     }
   } catch { /* 学習は任意機能 — 失敗しても本体は略図グラフで動作する */ }
   walkLearn.loading = false;
 }
-try {
-  if (localStorage.getItem('bkc-walk-cache')) bootWalkLearn(false);
-} catch { /* localStorage不可でも継続 */ }
+// 起動時に全ユーザーへ学習データを適用（キャッシュ優先・なければ軽量フェッチ）。
+// GPSを使わない人にも「みんなの道」「入口補正」「登録スポット」が届く
+bootWalkLearn(false);
 
 // 現地測量モード（?survey）— 通常利用者のペイロードに影響しないよう動的読み込み
 if (new URLSearchParams(location.search).has('survey')) {
