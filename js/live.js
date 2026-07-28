@@ -32,7 +32,8 @@ async function loadFirebase() {
   if (fb) return fb;
   const appMod = await import(`${SDK}firebase-app.js`);
   const dbMod = await import(`${SDK}firebase-database.js`);
-  const app = appMod.initializeApp(FIREBASE_CONFIG);
+  // 歩行学習（walk-learn.js）が先に初期化している場合があるため二重初期化を防ぐ
+  const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(FIREBASE_CONFIG);
   const db = dbMod.getDatabase(app, FIREBASE_CONFIG.databaseURL);
   fb = { db, ...dbMod };
   return fb;

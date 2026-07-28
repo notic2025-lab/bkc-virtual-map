@@ -743,7 +743,13 @@ const floorY = (fid = userFloor) => FLOORS[fid].y;
 // ------------------------------------------------------------
 const nodePos = {};
 const adj = {};
-const addEdge = (a, b) => { (adj[a] ??= []).push(b); (adj[b] ??= []).push(a); };
+const addEdge = (a, b) => {
+  if ((adj[a] ?? []).includes(b)) return; // 歩行学習の再適用等による重複を防ぐ
+  (adj[a] ??= []).push(b); (adj[b] ??= []).push(a);
+};
+// 歩行学習による経路コスト係数（1=通常 / <1=みんながよく歩く道）。walk-learn.js が設定する
+const edgeFactor = {};
+const wKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 for (const fid of FLOOR_ORDER) {
   const fl = FLOORS[fid];
   for (const [id, p] of Object.entries(fl.navNodes)) {
@@ -767,9 +773,12 @@ for (const lk of FLOOR_LINKS) {
 
 function astar(startId, goalId) {
   if (startId === goalId) return [startId];
+  // ヒューリスティックは歩行学習の最大割引（FACTOR_MIN=0.72）に合わせて縮め、
+  // 割引後も過大評価にならない（=最適経路を見逃さない）ようにする
+  const H = 0.72;
   const open = new Set([startId]);
   const came = {}, gScore = { [startId]: 0 };
-  const f = { [startId]: nodePos[startId].distanceTo(nodePos[goalId]) };
+  const f = { [startId]: nodePos[startId].distanceTo(nodePos[goalId]) * H };
   while (open.size) {
     let cur = null, best = Infinity;
     for (const n of open) if ((f[n] ?? Infinity) < best) { best = f[n]; cur = n; }
@@ -780,10 +789,11 @@ function astar(startId, goalId) {
     }
     open.delete(cur);
     for (const nb of adj[cur] ?? []) {
-      const t = gScore[cur] + nodePos[cur].distanceTo(nodePos[nb]);
+      // みんながよく歩く道はコストを割引 → 実際に人が通る経路が選ばれやすくなる
+      const t = gScore[cur] + nodePos[cur].distanceTo(nodePos[nb]) * (edgeFactor[wKey(cur, nb)] ?? 1);
       if (t < (gScore[nb] ?? Infinity)) {
         came[nb] = cur; gScore[nb] = t;
-        f[nb] = t + nodePos[nb].distanceTo(nodePos[goalId]);
+        f[nb] = t + nodePos[nb].distanceTo(nodePos[goalId]) * H;
         open.add(nb);
       }
     }
@@ -1564,6 +1574,8 @@ function startGeolocation({ silentError = false } = {}) {
       THREE.MathUtils.clamp(z, -MAP_D / 2 + 1.5, MAP_D / 2 - 1.5));
     geoState.course = (typeof heading === 'number' && !Number.isNaN(heading))
       ? THREE.MathUtils.degToRad(heading) : null;
+    // キャンパス内でGPS追従が始まったら歩行学習を起動（匿名の通行量集計＋学習適用）
+    if (geoState.ok && (accuracy ?? 99) <= 30) bootWalkLearn(true);
     updateGeoChip();
   }, () => {
     if (geoState.watchId != null) navigator.geolocation.clearWatch(geoState.watchId);
@@ -2106,7 +2118,7 @@ async function startLiveShare(code = null) {
   if (liveShareLoading) return;
   liveShareLoading = true;
   try {
-    const m = await import('./live.js?v=20260729a');
+    const m = await import('./live.js?v=20260729b');
     await m.initLive({
       scene, geoState, startGeolocation, toast, showRoute, PLACES, nearestNode,
       makeLabelSprite, isMobileDevice, openShareSheet,
@@ -2206,6 +2218,39 @@ async function initStartLocation() {
   }
   return ok;
 }
+
+// ------------------------------------------------------------
+// クラウド歩行学習（walk-learn.js）
+//   歩けば歩くほど「よく歩かれる道」が学習され、経路探索がそれを優先する。
+//   キャンパス内でGPS追従が始まったときだけ本格起動（収集＋最新データ取得）。
+//   学習結果のキャッシュがあれば、GPSなしのユーザーにも起動時に適用する。
+// ------------------------------------------------------------
+const walkLearn = { mod: null, loading: false, started: false };
+async function bootWalkLearn(full) {
+  if (walkLearn.loading || (full && walkLearn.started)) return;
+  walkLearn.loading = true;
+  try {
+    if (!walkLearn.mod) {
+      const m = await import('./walk-learn.js?v=20260729b');
+      m.setup({
+        THREE, scene, geoState, nodePos, adj, addEdge,
+        setEdgeFactor: (a, b, f) => { edgeFactor[wKey(a, b)] = f; },
+        makeVec: (x, z) => new THREE.Vector3(x, 0, z),
+      });
+      walkLearn.mod = m;
+    }
+    if (full) {
+      walkLearn.started = true;
+      await walkLearn.mod.start();
+    } else {
+      walkLearn.mod.applyCached();
+    }
+  } catch { /* 学習は任意機能 — 失敗しても本体は略図グラフで動作する */ }
+  walkLearn.loading = false;
+}
+try {
+  if (localStorage.getItem('bkc-walk-cache')) bootWalkLearn(false);
+} catch { /* localStorage不可でも継続 */ }
 
 // 現地測量モード（?survey）— 通常利用者のペイロードに影響しないよう動的読み込み
 if (new URLSearchParams(location.search).has('survey')) {

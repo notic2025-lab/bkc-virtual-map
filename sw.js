@@ -4,18 +4,19 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v17-live-fallback';
+const CACHE_VERSION = 'bkc-map-v18-walk-learn';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/style.css?v=20260728k',
-  './js/app.js?v=20260729a',
+  './js/app.js?v=20260729b',
+  './js/walk-learn.js?v=20260729b',
   './js/data.js',
   './js/survey-data.js',
   './js/firebase-config.js',
-  './js/live.js?v=20260729a',
+  './js/live.js?v=20260729b',
   './js/boot.js?v=20260728k',
   './js/survey.js',
   './js/ar.js',
