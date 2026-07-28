@@ -1550,6 +1550,34 @@ function courseToWorldYaw(course) {
   );
 }
 
+// ------------------------------------------------------------
+// マップマッチング — 現在地ピンを最寄りの通路（みんなの道含む）へスナップ表示
+//   GPS誤差や略図の歪みで「道の外・建物の中を歩いて見える」問題を吸収する。
+//   スナップするのは表示だけで、経路探索・逸脱判定のしきい値・歩行学習・
+//   位置共有はすべて生のGPS位置のまま動く。
+// ------------------------------------------------------------
+const SNAP_DIST = 4; // 道からこれ以内（≈16m）なら道の上に表示。離れたら生の位置
+function snapToPath(pos) {
+  let bx = 0, bz = 0, bd = Infinity;
+  for (const a of Object.keys(adj)) {
+    const pa = nodePos[a];
+    if (!pa) continue;
+    for (const b of adj[a]) {
+      if (b < a) continue; // 双方向登録のエッジを1回だけ処理
+      const pb = nodePos[b];
+      if (!pb) continue;
+      const vx = pb.x - pa.x, vz = pb.z - pa.z;
+      const len2 = vx * vx + vz * vz || 1e-9;
+      let u = ((pos.x - pa.x) * vx + (pos.z - pa.z) * vz) / len2;
+      u = u < 0 ? 0 : u > 1 ? 1 : u;
+      const x = pa.x + vx * u, z = pa.z + vz * u;
+      const d = (pos.x - x) ** 2 + (pos.z - z) ** 2;
+      if (d < bd) { bd = d; bx = x; bz = z; }
+    }
+  }
+  return bd <= SNAP_DIST * SNAP_DIST ? new THREE.Vector3(bx, 0, bz) : null;
+}
+
 function geoStatusText() {
   if (!('geolocation' in navigator)) return 'GPS非対応';
   if (geoState.watchId == null) return 'GPS待機中';
@@ -1572,6 +1600,8 @@ function startGeolocation({ silentError = false } = {}) {
     geoState.world = new THREE.Vector3(
       THREE.MathUtils.clamp(x, -MAP_W / 2 + 1.5, MAP_W / 2 - 1.5), 0,
       THREE.MathUtils.clamp(z, -MAP_D / 2 + 1.5, MAP_D / 2 - 1.5));
+    // マップマッチング: 表示用に最寄りの通路上へスナップした座標も持つ
+    geoState.snap = geoState.ok ? snapToPath(geoState.world) : null;
     geoState.course = (typeof heading === 'number' && !Number.isNaN(heading))
       ? THREE.MathUtils.degToRad(heading) : null;
     // キャンパス内でGPS追従が始まったら歩行学習を起動（匿名の通行量集計＋学習適用）
@@ -1685,11 +1715,12 @@ function updateNav(dt, t) {
   // GPS現在地へ追従（取得できない間は経路の始点で待機）
   let moving = false;
   if (geoState.ok && geoState.world) {
-    const dist = Math.hypot(geoState.world.x - avatar.position.x, geoState.world.z - avatar.position.z);
+    const gp = geoState.snap ?? geoState.world; // 表示は道の上にスナップ
+    const dist = Math.hypot(gp.x - avatar.position.x, gp.z - avatar.position.z);
     moving = dist > 0.6;
     const k = 1 - Math.pow(0.02, dt);
-    const dx = (geoState.world.x - avatar.position.x) * k;
-    const dz = (geoState.world.z - avatar.position.z) * k;
+    const dx = (gp.x - avatar.position.x) * k;
+    const dz = (gp.z - avatar.position.z) * k;
     avatar.position.x += dx;
     avatar.position.z += dz;
     // 向き: GPSの進行方位 > 実際の移動ベクトル の優先順（方位はマップ回転を補正）
@@ -1938,9 +1969,10 @@ function animate() {
   if (navMode && routeCurve) {
     updateNav(dt, t);
   } else if (geoState.ok && geoState.world) {
+    const gp = geoState.snap ?? geoState.world; // 表示は道の上にスナップ
     const k = Math.min(1, dt * 3);
-    avatar.position.x += (geoState.world.x - avatar.position.x) * k;
-    avatar.position.z += (geoState.world.z - avatar.position.z) * k;
+    avatar.position.x += (gp.x - avatar.position.x) * k;
+    avatar.position.z += (gp.z - avatar.position.z) * k;
   }
 
   // カメラトゥイーン
