@@ -17,14 +17,13 @@
 import { gpsToWorld, toWorld, SHOPS, MAP_W, MAP_D } from './data.js';
 import { FIREBASE_CONFIG } from './firebase-config.js';
 
-const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 const CELL = 1.5;              // 1セル = 1.5ワールド単位 ≈ 6m
 const ACC_LIMIT_M = 20;        // これより精度が悪い測位は学習に使わない
 const SAMPLE_MS = 2500;        // 移動サンプリング間隔
 const FLUSH_MS = 15000;        // 集計送信間隔
 const MAX_JUMP_CELLS = 3;      // これを超えるセル移動はGPSジャンプとして無視
 const CACHE_KEY = 'bkc-walk-cache';
-const CACHE_TTL = 24 * 3600 * 1000;
+const CACHE_TTL = 72 * 3600 * 1000;  // 3日キャッシュ（無料枠のダウンロード量を節約）
 const POPULAR_MIN = 4;         // この回数以上でエッジ割引・表示の対象
 const SHORTCUT_MIN = 8;        // この回数以上で「みんなの道」としてグラフに追加
 const NOVEL_DIST = 2.0;        // 既存通路からこれ以上離れた区間だけ新規の道とみなす（≈8m）
@@ -35,7 +34,6 @@ const FACTOR_MIN = 0.72;       // 人気通路のコスト係数下限（最大2
 const SHORTCUT_FACTOR = 0.85;  // みんなの道のコスト係数（GPS由来なので控えめに優遇）
 
 let ctx = null;          // app.js から渡される { THREE, scene, geoState, nodePos, adj, addEdge, setEdgeFactor }
-let fb = null;
 let applied = false;
 let collecting = false;
 let originalEdges = null; // 学習ノード追加「前」のエッジ一覧スナップショット
@@ -50,16 +48,24 @@ export function setup(deps) {
 }
 
 // ------------------------------------------------------------
-// Firebase（必要時のみ・二重初期化ガード付き）
+// 通信は REST API のみ（Firebase SDK不使用）
+//   SDKは常時WebSocket接続を張るため、Sparkプランの同時接続上限（100）を
+//   1ユーザー1接続で消費してしまう。歩行学習は15秒に1回の送信と1日1回の
+//   取得だけなので、RESTなら接続数を一切消費せず、何千人が使っても
+//   ライブ共有用の接続枠を圧迫しない。
 // ------------------------------------------------------------
-async function loadFirebase() {
-  if (fb) return fb;
-  const appMod = await import(`${SDK}firebase-app.js`);
-  const dbMod = await import(`${SDK}firebase-database.js`);
-  const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(FIREBASE_CONFIG);
-  const db = dbMod.getDatabase(app, FIREBASE_CONFIG.databaseURL);
-  fb = { db, ...dbMod };
-  return fb;
+const DB_URL = FIREBASE_CONFIG.databaseURL.replace(/\/$/, '');
+
+async function restFetch(path, options = {}, timeoutMs = 8000) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${DB_URL}/${path}.json`, { ...options, signal: ac.signal });
+    if (!res.ok) throw new Error(`rtdb ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ------------------------------------------------------------
@@ -108,10 +114,13 @@ async function flush() {
   const batch = new Map(pending);
   pending.clear();
   try {
-    const { db, ref, update, increment } = await loadFirebase();
     const payload = {};
-    for (const [key, n] of batch) payload[key] = increment(Math.min(n, 50));
-    await update(ref(db, 'walk/t'), payload);
+    for (const [key, n] of batch) payload[key] = { '.sv': { increment: Math.min(n, 50) } };
+    await restFetch('walk/t', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
   } catch {
     // ルール未設定・オフライン等では静かに破棄（学習は任意機能）
   }
@@ -131,12 +140,7 @@ function writeCache(t) {
 }
 
 async function fetchRemote() {
-  const { db, ref, get } = await loadFirebase();
-  const snap = await Promise.race([
-    get(ref(db, 'walk/t')),
-    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
-  ]);
-  const t = snap.val() ?? {};
+  const t = (await restFetch('walk/t')) ?? {};
   writeCache(t);
   return t;
 }

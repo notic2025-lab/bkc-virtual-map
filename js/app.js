@@ -2263,7 +2263,7 @@ async function bootWalkLearn(full) {
   walkLearn.loading = true;
   try {
     if (!walkLearn.mod) {
-      const m = await import('./walk-learn.js?v=20260729b');
+      const m = await import('./walk-learn.js?v=20260729d');
       m.setup({
         THREE, scene, geoState, nodePos, adj, addEdge,
         setEdgeFactor: (a, b, f) => { edgeFactor[wKey(a, b)] = f; },
