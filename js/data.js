@@ -624,6 +624,24 @@ try {
       if (s.entry && fl.navNodes[s.entry]) pl.entry = s.entry;
       if (isValidLatLng(s.pin)) pl.pin = latLngToPercent(s.pin.lat, s.pin.lng);
     }
+    // 測量モードで登録した新規スポット（駐輪場・自販機など）を検索・案内できる施設として追加
+    let ptAdded = 0;
+    for (const [id, s] of Object.entries(SURVEY.points ?? {})) {
+      if (typeof id !== 'string' || !/^[\w-]{1,32}$/.test(id)) continue;
+      if (typeof s?.name !== 'string' || !s.name.trim() || !isValidLatLng(s.pin)) continue;
+      if (SHOPS.some(x => x.id === id) || PLACES.some(x => x.id === id)) continue;
+      if (++ptAdded > 200) break;
+      SHOPS.push({
+        id, floor: 'campus',
+        name: s.name.slice(0, 24), en: '', tag: '登録スポット',
+        cat: CATEGORIES[s.cat] ? s.cat : 'life',
+        pin: latLngToPercent(s.pin.lat, s.pin.lng),
+        size: { w: 3, d: 3, h: 1.2 },
+        entry: (s.entry && fl.navNodes[s.entry]) ? s.entry : undefined,
+        desc: '現地測量で登録されたスポット。',
+        url: 'https://www.ritsumei.ac.jp/',
+      });
+    }
     // replaceGraph で略図ノードが消えた場合、参照切れの entry を最寄りノードへ振り直す
     const nearestNodeId = (pin) => {
       let best = null, bd = Infinity;

@@ -19,4 +19,7 @@ export const SURVEY = {
   buildings: {},
   // 門・広場の実測位置: { 'gate-main': { entry: 'S1', pin: { lat, lng } }, ... }
   places: {},
+  // 測量モードで登録した新規スポット（駐輪場・自販機など）:
+  // { 'pt-1': { name: '第一駐輪場', cat: 'life', entry: 'S3', pin: { lat, lng } }, ... }
+  points: {},
 };

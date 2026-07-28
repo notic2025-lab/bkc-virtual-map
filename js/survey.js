@@ -7,7 +7,7 @@
 //   記録は localStorage に常時保存されるため、途中で落ちても消えない。
 // ============================================================
 import * as THREE from 'three';
-import { GEO, gpsToWorld, toWorld, SHOPS, PLACES, FLOORS } from './data.js';
+import { GEO, gpsToWorld, toWorld, SHOPS, PLACES, FLOORS, CATEGORIES } from './data.js';
 
 const LS_KEY = 'bkc-survey-v1';
 const ACCURACY_LIMIT_M = 15;  // これより精度が悪い測位は記録しない
@@ -17,8 +17,10 @@ const CONNECT_M = 30;         // チェーン開始時に最寄りノードへ�
 export function initSurvey({ scene, geoState, startGeolocation, toast }) {
   // ---------- 状態 ----------
   const state = load() ?? {
-    seq: 1, nodes: {}, edges: [], buildings: {}, places: {}, replaceGraph: false,
+    seq: 1, nodes: {}, edges: [], buildings: {}, places: {}, points: {}, replaceGraph: false,
   };
+  state.points ??= {};  // 旧バージョンで保存したデータとの互換
+  state.pseq ??= 0;
   let logging = false;
   let lastNodeId = null;   // 歩行チェーンの末尾（Sノードのみ）
   const actions = [];      // 取り消し用の操作履歴
@@ -83,9 +85,32 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     toast(`「${poi.name}」の入口を記録しました（±${Math.round(geoState.accuracy ?? 0)}m）`);
   }
 
+  // 地図に無いスポット（駐輪場・自販機・喫煙所など）を現在地に新規登録する。
+  // 反映は「書き出し → survey-data.js を置き換えて push」した時だけ =
+  // 運用前フェーズの整備専用で、一般ユーザーが勝手に増やすことはできない。
+  function recordPoint(name, cat) {
+    const p = here();
+    if (!p) { toast('GPSを取得中です。空の見える場所で少し待ってください'); return; }
+    const keep = lastNodeId;
+    lastNodeId = null;
+    const nodeId = addNode(p, { connectNearest: true });
+    lastNodeId = keep;
+    const id = 'pt-' + (++state.pseq);
+    state.points[id] = { name: name.slice(0, 24), cat, entry: nodeId, pin: { lat: p.lat, lng: p.lng } };
+    actions.push({ type: 'point', id });
+    save(); redraw(); updateHud();
+    toast(`「${name}」を登録しました（±${Math.round(geoState.accuracy ?? 0)}m）`);
+  }
+
   function undo() {
     const a = actions.pop();
     if (!a) { toast('取り消す操作がありません'); return; }
+    if (a.type === 'point') {
+      delete state.points[a.id];
+      toast('ポイント登録を取り消しました（もう一度↩でノードも消えます）');
+      save(); redraw(); updateHud();
+      return;
+    }
     if (a.type === 'node') {
       delete state.nodes[a.id];
       state.edges = state.edges.filter(e => e[0] !== a.id && e[1] !== a.id);
@@ -103,7 +128,7 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
 
   function clearAll() {
     if (!confirm('測量データをすべて削除します。よろしいですか？\n（エクスポート済みのファイルには影響しません）')) return;
-    state.seq = 1; state.nodes = {}; state.edges = []; state.buildings = {}; state.places = {};
+    state.seq = 1; state.pseq = 0; state.nodes = {}; state.edges = []; state.buildings = {}; state.places = {}; state.points = {};
     actions.length = 0; lastNodeId = null;
     save(); redraw(); updateHud();
     toast('測量データを削除しました');
@@ -118,6 +143,7 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
       edges: state.edges,
       buildings: state.buildings,
       places: state.places,
+      points: state.points,
     };
     const text =
       '// 自動生成: BKC現地測量データ（?survey モードでエクスポート）\n' +
@@ -175,7 +201,7 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
       if (c.geometry && c.geometry !== nodeGeo) c.geometry.dispose();
     }
     const entryIds = new Set(
-      [...Object.values(state.buildings), ...Object.values(state.places)].map(s => s.entry)
+      [...Object.values(state.buildings), ...Object.values(state.places), ...Object.values(state.points)].map(s => s.entry)
     );
     for (const id of Object.keys(state.nodes)) {
       const w = nodeWorld(id);
@@ -242,6 +268,23 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     .sv-poi small { color: #7ceaff; font-weight: 700; flex-shrink: 0; }
     .sv-poi .sv-done { color: #4ade80; }
     #sv-picker-close { margin-top: 10px; min-height: 48px; }
+    #survey-point-form {
+      position: fixed; inset: 0; z-index: 96; background: rgba(4,12,18,.9); backdrop-filter: blur(8px);
+      display: grid; place-items: center; padding: 16px;
+    }
+    #survey-point-form.hidden { display: none; }
+    #survey-point-form .sv-form {
+      width: min(340px, 100%); display: grid; gap: 10px;
+      background: rgba(10,26,38,.96); border: 1px solid rgba(56,240,255,.3); border-radius: 16px;
+      padding: 16px;
+    }
+    #survey-point-form h3 { color: #eafcff; font-size: 15px; }
+    #survey-point-form label { color: #9fc9d8; font-size: 11px; font-weight: 700; }
+    #survey-point-form input, #survey-point-form select {
+      width: 100%; min-height: 46px; border-radius: 10px; padding: 0 12px;
+      border: 1px solid rgba(56,240,255,.3); background: rgba(4,14,22,.9); color: #eafcff;
+      font: 700 14px/1.2 inherit;
+    }
     body.nav-active #survey-panel { display: none; }
   `;
   document.head.appendChild(style);
@@ -261,6 +304,7 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     </div>
     <div class="sv-row">
       <button id="sv-poi" class="sv-btn" type="button">入口を記録</button>
+      <button id="sv-point" class="sv-btn" type="button">＋新規スポット</button>
     </div>
     <label class="sv-check"><input type="checkbox" id="sv-replace"> 略図の通路を置き換える（全域測量後にON）</label>
     <div class="sv-row">
@@ -277,6 +321,39 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     <div id="sv-picker-list"></div>
     <button id="sv-picker-close" class="sv-btn" type="button">閉じる</button>`;
   uiRoot.appendChild(picker);
+
+  // 新規スポット登録フォーム（駐輪場・自販機・喫煙所など地図に無い場所を現在地で登録）
+  const pointForm = document.createElement('div');
+  pointForm.id = 'survey-point-form';
+  pointForm.className = 'hidden';
+  pointForm.innerHTML = `
+    <div class="sv-form">
+      <h3>現在地にスポットを登録</h3>
+      <div><label for="sv-pt-name">名前（例: 第一駐輪場）</label>
+      <input id="sv-pt-name" type="text" maxlength="24" placeholder="スポット名"></div>
+      <div><label for="sv-pt-cat">カテゴリ</label>
+      <select id="sv-pt-cat">
+        ${Object.entries(CATEGORIES).map(([k, c]) => `<option value="${k}"${k === 'life' ? ' selected' : ''}>${c.label}</option>`).join('')}
+      </select></div>
+      <button id="sv-pt-save" class="sv-btn sv-primary" type="button">現在地に登録</button>
+      <button id="sv-pt-cancel" class="sv-btn" type="button">キャンセル</button>
+    </div>`;
+  uiRoot.appendChild(pointForm);
+  panel.querySelector('#sv-point').addEventListener('click', () => {
+    if (!here()) { toast('GPSを取得中です。空の見える場所で少し待ってください'); return; }
+    pointForm.classList.remove('hidden');
+    setTimeout(() => pointForm.querySelector('#sv-pt-name').focus(), 60);
+  });
+  pointForm.querySelector('#sv-pt-cancel').addEventListener('click', () => pointForm.classList.add('hidden'));
+  pointForm.addEventListener('click', (e) => { if (e.target === pointForm) pointForm.classList.add('hidden'); });
+  pointForm.querySelector('#sv-pt-save').addEventListener('click', () => {
+    const name = pointForm.querySelector('#sv-pt-name').value.trim();
+    if (!name) { toast('スポット名を入力してください'); return; }
+    const cat = pointForm.querySelector('#sv-pt-cat').value;
+    pointForm.classList.add('hidden');
+    pointForm.querySelector('#sv-pt-name').value = '';
+    recordPoint(name, CATEGORIES[cat] ? cat : 'life');
+  });
 
   const ui = {
     gps: panel.querySelector('#sv-gps'),
@@ -340,6 +417,7 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     const total = SHOPS.length + PLACES.length;
     ui.stats.textContent =
       `ノード ${Object.keys(state.nodes).length} ・ 通路 ${state.edges.length} ・ 入口 ${done}/${total}` +
+      ` ・ スポット ${Object.keys(state.points).length}` +
       (logging ? ' ・ 記録中' : '');
   }
 

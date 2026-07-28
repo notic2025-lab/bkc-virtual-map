@@ -4,7 +4,7 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v21-crowd-survey';
+const CACHE_VERSION = 'bkc-map-v22-survey-points';
 
 const PRECACHE = [
   './',
