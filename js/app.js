@@ -14,6 +14,11 @@ const METER_PER_UNIT = GEO.meterPerUnit; // GPS変換・距離表示・到着判
 const isMobileDevice = matchMedia('(max-width: 640px), (pointer: coarse)').matches;
 const prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isSurveyedMap = !!SURVEY?.replaceGraph;
+const isSurveyMode = new URLSearchParams(location.search).has('survey');
+let surveySelectedShopId = null;
+window.addEventListener('bkc-survey-highlight-shop', (event) => {
+  surveySelectedShopId = event.detail?.shopId ?? null;
+});
 
 // ------------------------------------------------------------
 // 基本セットアップ
@@ -1939,6 +1944,11 @@ canvas.addEventListener('pointerup', (e) => {
   const hit = hits.find(h => h.object.userData?.shop || h.object.userData?.type === 'shop');
   if (hit) {
     const shop = hit.object.userData.shop;
+    if (isSurveyMode) {
+      surveySelectedShopId = shop.id;
+      window.dispatchEvent(new CustomEvent('bkc-survey-select-shop', { detail: { shopId: shop.id } }));
+      return;
+    }
     openCard(shop);
     focusShop(shop);
   } else if (!$('shop-card').classList.contains('hidden')) {
@@ -1983,12 +1993,17 @@ function animate() {
   const areaView = viewDistance < 130;
   for (const s of SHOPS) {
     const on = s._categoryVisible && s.floor === viewFloor; // 表示中フロアのみ描画
-    const selected = cardShop === s || hovered === s._mesh;
+    const selected = cardShop === s || hovered === s._mesh || (isSurveyMode && surveySelectedShopId === s.id);
     s._mesh.visible = on;
     // 遠景では主要施設のみラベル表示（画面の情報量を抑える）
     s._label.visible = on && (areaView || s.landmark || selected);
     let labelScale = selected ? 1.1 : detailView ? 1 : areaView ? 0.72 : 0.5;
     let labelOpacity = selected ? 1 : detailView ? 1 : areaView ? 0.92 : 0.78;
+    if (isSurveyMode) {
+      // 現地測量では建物をタップできる余白を優先し、選択中の名称だけ大きく見せる。
+      labelScale = selected ? 0.72 : detailView ? 0.5 : areaView ? 0.38 : 0.3;
+      labelOpacity = selected ? 1 : 0.76;
+    }
     if (navMode) {
       // 追従視点では至近距離のラベルが画面を塞ぐため、近づくほどフェードアウト
       const dAv = s._pos.distanceTo(avatar.position);
@@ -2366,8 +2381,8 @@ async function bootWalkLearn(full) {
 bootWalkLearn(false);
 
 // 現地測量モード（?survey）— 通常利用者のペイロードに影響しないよう動的読み込み
-if (new URLSearchParams(location.search).has('survey')) {
-  import('./survey.js?v=20260814e')
+if (isSurveyMode) {
+  import('./survey.js?v=20260814f')
     .then(m => m.initSurvey({ scene, camera, mapControls: controls, geoState, startGeolocation, toast }))
     .catch(() => toast('測量モードを読み込めませんでした'));
 }
