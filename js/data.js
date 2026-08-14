@@ -4,6 +4,7 @@
 // 座標系: 公式イラストマップ画像上の percent (left: 0-100, top: 0-100)
 //   建物・通路・池・グラウンドの配置は公式イラストの実配置に準拠。
 // ============================================================
+import { SURVEY } from './survey-data.js';
 
 export const MAP_W = 230;   // ワールド幅 (x) … 公式図の横方向。1単位 ≈ 4m → 約920m
 export const MAP_D = 88;    // ワールド奥行 (z) … 公式図の縦方向 → 約350m（図の縦横比 2.63:1 に一致）
@@ -22,10 +23,12 @@ export function toWorld(left, top) {
 // ※ 測量データ（survey-data.js）を使う場合、現在地も地図も同じこの変換を
 //   通るため互いにズレない。この値は「地図の置き方」を決めるだけになる。
 export const GEO = {
-  lat0: 34.9822,       // BKCキャンパス中心（34°58'56"N）
-  lng0: 135.9617,      // 135°57'42"E
-  rotationDeg: 45,     // 公式イラストの「上」の実方位（コンパス表記からの推定・要現地校正）
-  meterPerUnit: 4,
+  lat0: Number.isFinite(SURVEY?.geo?.lat0) ? SURVEY.geo.lat0 : 34.9822,
+  lng0: Number.isFinite(SURVEY?.geo?.lng0) ? SURVEY.geo.lng0 : 135.9617,
+  // 実測グラフは点群の主軸から自動算出。略図使用中だけ公式イラストの推定回転を維持する。
+  rotationDeg: Number.isFinite(SURVEY?.geo?.rotationDeg)
+    ? SURVEY.geo.rotationDeg : (SURVEY?.replaceGraph ? 0 : 45),
+  meterPerUnit: Number.isFinite(SURVEY?.geo?.meterPerUnit) ? SURVEY.geo.meterPerUnit : 4,
 };
 
 export function gpsToWorld(lat, lng) {
@@ -574,9 +577,17 @@ export const FACILITIES = [];
 // ============================================================
 // 現地測量データの適用（js/survey-data.js）
 //   測量モード（?survey）で歩いて記録した実GPS座標を略図にマージする。
-//   現在地ピンも地図も同じ gpsToWorld 変換を通るため、測量済みの
-//   通路・入口ではナビと実際の位置が原理的にズレない。
+//   現在地ピンも地図も同じ gpsToWorld 変換を通す。最終精度は端末GPS、
+//   往復平均、入口の複数測位、基準点検証の品質に依存する。
 // ============================================================
+// 調査プランナーは公開済みの実測グラフへ置換された後も、元の調査区画を
+// 同じIDで追跡する必要があるため、マージ前の基準グラフを不変スナップショットにする。
+export const BASE_CAMPUS_NAV = {
+  nodes: Object.fromEntries(Object.entries(FLOORS.campus.navNodes).map(([id, p]) => [id, { ...p }])),
+  edges: FLOORS.campus.navEdges.map(([a, b]) => [a, b]),
+};
+export const BASE_SURVEY_SHOP_IDS = SHOPS.map(s => s.id);
+
 export function worldToPercent(x, z) {
   return { left: x / MAP_W * 100 + 50, top: z / MAP_D * 100 + 50 };
 }
@@ -584,8 +595,6 @@ export function latLngToPercent(lat, lng) {
   const { x, z } = gpsToWorld(lat, lng);
   return worldToPercent(x, z);
 }
-
-import { SURVEY } from './survey-data.js';
 
 // 測量データの座標として妥当か（NaN・範囲外が1つでも混ざると
 // 経路グラフ全体が壊れるため、取り込み前に必ず検証する）
@@ -611,12 +620,27 @@ try {
     for (const [a, b] of SURVEY.edges ?? []) {
       if (fl.navNodes[a] && fl.navNodes[b] && a !== b) fl.navEdges.push([a, b]);
     }
-    // 建物・門の実測入口／位置で上書き
+    // 建物入口は経路ノードとして適用する。入口と建物中心は別物なので、
+    // 明示的に center が測量されている場合だけ建物本体の pin を移動する。
     for (const [id, s] of Object.entries(SURVEY.buildings ?? {})) {
       const shop = SHOPS.find(x => x.id === id);
       if (!shop) continue;
       if (s.entry && fl.navNodes[s.entry]) shop.entry = s.entry;
-      if (isValidLatLng(s.pin)) shop.pin = latLngToPercent(s.pin.lat, s.pin.lng);
+      if (isValidLatLng(s.center)) shop.pin = latLngToPercent(s.center.lat, s.center.lng);
+      const entrance = isValidLatLng(s.entrance) ? s.entrance : (isValidLatLng(s.pin) ? s.pin : null);
+      if (entrance) shop.surveyEntrance = { ...entrance };
+      const entrances = (Array.isArray(s.entrances) ? s.entrances : (entrance ? [entrance] : []))
+        .filter(isValidLatLng).slice(0, 12);
+      if (entrances.length) shop.surveyEntrances = entrances.map(e => ({ ...e }));
+      const entryIds = entrances.map(e => e.entry).filter(id => id && fl.navNodes[id]);
+      if (entryIds.length) {
+        shop.entries = [...new Set(entryIds)];
+        shop.entry = shop.entries[0];
+      }
+      if (Array.isArray(s.footprint)) {
+        const footprint = s.footprint.filter(isValidLatLng).slice(0, 1000);
+        if (footprint.length >= 4) shop.surveyFootprint = footprint.map(p => ({ lat: p.lat, lng: p.lng }));
+      }
     }
     for (const [id, s] of Object.entries(SURVEY.places ?? {})) {
       const pl = PLACES.find(x => x.id === id);
@@ -653,6 +677,22 @@ try {
     };
     for (const poi of [...SHOPS, ...PLACES]) {
       if (!fl.navNodes[poi.entry]) poi.entry = nearestNodeId(poi.pin);
+    }
+  }
+
+  // 現地名称チェックは通路測量の有無に関係なく適用する。
+  // corrected のみ表示名を置換し、未確認・見つからない記録は自動削除に使わない。
+  for (const [id, audit] of Object.entries(SURVEY?.audits ?? {})) {
+    const shop = SHOPS.find(x => x.id === id);
+    if (!shop || !audit || typeof audit !== 'object') continue;
+    const status = ['ok', 'corrected', 'unconfirmed', 'not-found'].includes(audit.status)
+      ? audit.status : 'unconfirmed';
+    const observedName = typeof audit.observedName === 'string' ? audit.observedName.trim().slice(0, 60) : '';
+    const note = typeof audit.note === 'string' ? audit.note.trim().slice(0, 240) : '';
+    shop.fieldAudit = { status, observedName, note, checkedAt: audit.checkedAt ?? null };
+    if (status === 'corrected' && observedName) {
+      shop.originalName = shop.name;
+      shop.name = observedName;
     }
   }
 } catch (e) {
