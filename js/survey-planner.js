@@ -77,6 +77,55 @@ function edgeBetweenness() {
 
 const EDGE_IMPORTANCE = edgeBetweenness();
 
+const GUIDE_ADJ = Object.fromEntries(Object.keys(fl.navNodes).map(id => [id, []]));
+for (const [a, b] of fl.navEdges) {
+  const aw = worldOfNode(a), bw = worldOfNode(b);
+  if (!aw || !bw) continue;
+  const cost = meters(aw, bw);
+  GUIDE_ADJ[a].push({ id: b, cost });
+  GUIDE_ADJ[b].push({ id: a, cost });
+}
+
+// 現在地から調査開始点まで、既存の通路グラフに沿う案内線を作る。
+// 測量対象区間そのものとは色を分け、移動中に建物を横切る直線を出さない。
+function approachPath(origin, target, calibrate) {
+  if (!origin || !target) return target ? [target] : [];
+  const ids = Object.keys(fl.navNodes);
+  const transformed = Object.fromEntries(ids.map(id => [id, calibrate(worldOfNode(id))]));
+  const nearest = p => ids.reduce((best, id) => {
+    const w = transformed[id];
+    const d = Math.hypot(w.x - p.x, w.z - p.z);
+    return !best || d < best.d ? { id, d } : best;
+  }, null)?.id;
+  const start = nearest(origin), goal = nearest(target);
+  if (!start || !goal) return [origin, target];
+  const distance = Object.fromEntries(ids.map(id => [id, Infinity]));
+  const previous = {};
+  const open = new Set(ids);
+  distance[start] = 0;
+  while (open.size) {
+    let current = null;
+    for (const id of open) if (current == null || distance[id] < distance[current]) current = id;
+    if (current == null || distance[current] === Infinity) break;
+    open.delete(current);
+    if (current === goal) break;
+    for (const edge of GUIDE_ADJ[current] ?? []) {
+      if (!open.has(edge.id)) continue;
+      const next = distance[current] + edge.cost;
+      if (next < distance[edge.id]) { distance[edge.id] = next; previous[edge.id] = current; }
+    }
+  }
+  const nodeIds = [];
+  for (let id = goal; id; id = previous[id]) {
+    nodeIds.push(id);
+    if (id === start) break;
+  }
+  if (nodeIds[nodeIds.length - 1] !== start) return [origin, target];
+  nodeIds.reverse();
+  const points = [origin, ...nodeIds.map(id => transformed[id]), target];
+  return points.filter((p, i) => !i || Math.hypot(p.x - points[i - 1].x, p.z - points[i - 1].z) > 1);
+}
+
 function trackQuality(track) {
   const samples = Array.isArray(track?.samples) ? track.samples : [];
   const good = samples.filter(p => Number.isFinite(p?.accuracy) && p.accuracy <= SURVEY_QUALITY.productionAccuracyM);
@@ -299,6 +348,7 @@ export function createSurveyPlan(state, position, budgetMin = 30) {
   const phase = phaseOf(state, all);
   const candidates = all.filter(t => phase.allowed.has(t.kind));
   const origin = currentWorld(position);
+  const calibrate = calibrationFor(state);
   let cursor = origin;
   const plan = [], remaining = new Map(candidates.map(t => [t.id, t]));
   let used = 0;
@@ -315,7 +365,11 @@ export function createSurveyPlan(state, position, budgetMin = 30) {
       if (score > bestScore) { best = { ...task, expectedGpsReliability: reliability }; bestScore = score; bestCost = cost; }
     }
     if (!best) break;
-    plan.push({ ...best, estimatedMin: Math.max(1, Math.ceil(bestCost)), priorityScore: Math.round(bestScore * 10) / 10 });
+    plan.push({
+      ...best,
+      approachWorld: approachPath(cursor, best.startWorld, calibrate),
+      estimatedMin: Math.max(1, Math.ceil(bestCost)), priorityScore: Math.round(bestScore * 10) / 10,
+    });
     used += bestCost;
     cursor = best.endWorld;
     remaining.delete(best.id);
