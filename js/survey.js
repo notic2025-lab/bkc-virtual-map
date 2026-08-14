@@ -12,7 +12,7 @@ import { SURVEY as BASE_SURVEY } from './survey-data.js';
 import {
   SURVEY_QUALITY, createSurveyPlan, surveyProgress, evaluateTrack, perimeterFromTrack,
   buildProductionGraph, deriveGeoReference,
-} from './survey-planner.js';
+} from './survey-planner.js?v=20260814c';
 
 const LS_KEY = 'bkc-survey-v1'; // キーは維持して既存の現地データを自動移行する
 const ACCURACY_LIMIT_M = 5;   // 完成地図へ採用できるGPS精度上限（95%半径）
@@ -22,7 +22,7 @@ const CONNECT_M = 30;         // チェーン開始時に最寄りノードへ�
 const STATIONARY_SECONDS = 15; // 入口・スポットは複数測位の中央値で記録
 const SURVEY_SHOPS = SHOPS.filter(s => BASE_SURVEY_SHOP_IDS.includes(s.id));
 
-export function initSurvey({ scene, geoState, startGeolocation, toast }) {
+export function initSurvey({ scene, camera, mapControls, geoState, startGeolocation, toast }) {
   const syncParam = new URLSearchParams(location.search).get('sync') ?? '';
   const syncToken = /^[a-f0-9]{32,96}$/i.test(syncParam) ? syncParam : '';
   let syncTimer = null;
@@ -67,6 +67,8 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
   let activePlannerTask = null;
   let currentPlan = null;
   let currentTaskIndex = 0;
+  let lastPlannerPosition = null;
+  let plannerRefreshAt = 0;
   const actions = [];      // 取り消し用の操作履歴
   let wakeLock = null;
   const guideGroup = new THREE.Group();
@@ -484,6 +486,11 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     }
     updateHud();
     if (!on) refreshPlanner();
+    else {
+      const task = currentPlan?.tasks?.[currentTaskIndex];
+      renderTaskGuidance(task);
+      drawPlannerTask(task);
+    }
   }
 
   // ---------- 歩行ログ（自動ノード記録） ----------
@@ -549,32 +556,49 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
   const style = document.createElement('style');
   style.textContent = `
     #survey-panel {
-      position: fixed; z-index: 90; left: 10px; bottom: max(10px, env(safe-area-inset-bottom));
-      width: min(370px, calc(100vw - 20px)); max-height: calc(100dvh - 20px); overflow-y: auto;
+      position: fixed; z-index: 90; left: 50%; transform: translateX(-50%);
+      bottom: max(8px, env(safe-area-inset-bottom));
+      width: min(430px, calc(100vw - 16px)); max-height: min(62dvh, 610px); overflow-y: auto;
       background: rgba(20,24,28,.95); backdrop-filter: blur(14px);
-      border: 1px solid rgba(56,240,255,.3); border-radius: 16px;
-      padding: 12px 14px; color: #eef4f6; font-size: 13px;
+      border: 1px solid rgba(56,240,255,.35); border-radius: 18px;
+      padding: 10px 12px; color: #eef4f6; font-size: 13px;
       box-shadow: 0 14px 44px rgba(0,0,0,.5);
     }
     #survey-panel .sv-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; margin-bottom: 6px; }
     #survey-panel #sv-gps { font-size: 11px; font-weight: 700; color: #7ceaff; }
     #survey-panel #sv-gps.sv-bad { color: #fca5a5; }
-    #survey-panel .sv-stats { font-size: 11px; color: #9fc9d8; margin-bottom: 9px; }
-    #sv-guide { border: 1px solid rgba(246,199,106,.35); border-radius: 13px; padding: 10px; margin-bottom: 9px; background: rgba(246,199,106,.06); }
+    #survey-panel .sv-stats { font-size: 10px; color: #9fc9d8; margin: 7px 0; }
+    #sv-guide { border: 1px solid rgba(74,222,128,.4); border-radius: 14px; padding: 10px; background: rgba(8,25,31,.9); }
     #sv-guide-head { display:flex; justify-content:space-between; gap:8px; align-items:center; margin-bottom:7px; }
     #sv-guide-head b { color:#f6c76a; font-size:12px; }
     #sv-progress-track { height:7px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.1); margin-bottom:7px; }
     #sv-progress-fill { height:100%; width:0; background:linear-gradient(90deg,#22d3ee,#4ade80); }
-    #sv-progress-text { color:#b9dce8; font-size:10px; line-height:1.45; margin-bottom:8px; }
+    #sv-progress-text { color:#b9dce8; font-size:10px; line-height:1.45; margin:7px 0; }
     #sv-plan-controls { display:flex; gap:6px; margin-bottom:8px; }
     #sv-budget { width:86px; border-radius:9px; border:1px solid rgba(56,240,255,.3); background:#081722; color:#eafcff; padding:0 7px; }
-    #sv-task-card { border-top:1px solid rgba(246,199,106,.25); padding-top:8px; }
+    #sv-task-card { border-top:1px solid rgba(74,222,128,.25); padding-top:8px; }
     #sv-task-card.hidden { display:none; }
-    #sv-task-count { color:#7ceaff; font-size:10px; }
-    #sv-task-title { display:block; color:#fff; font-size:14px; line-height:1.35; margin:3px 0 5px; }
+    #sv-task-count { color:#7ceaff; font-size:10px; font-weight:800; }
+    #sv-action-title { display:block; color:#fff; font-size:20px; line-height:1.25; margin:5px 0; }
+    #sv-distance { color:#4ade80; font-size:14px; font-weight:900; margin-bottom:6px; }
+    #sv-route-key { display:flex; gap:12px; font-size:10px; color:#d7e8ed; margin:5px 0 8px; }
+    #sv-route-key span::before { content:''; display:inline-block; width:18px; height:5px; border-radius:9px; margin-right:5px; vertical-align:middle; }
+    #sv-route-key .move::before { background:#22d3ee; }
+    #sv-route-key .measure::before { background:#ff4fd8; }
+    #sv-task-title { display:block; color:#d9f7ff; font-size:12px; line-height:1.35; margin:3px 0 6px; }
     #sv-task-reason, #sv-task-instruction { color:#bdd4dc; font-size:11px; line-height:1.5; margin:0 0 5px; }
-    #sv-task-instruction { color:#f7e7bc; }
+    #sv-task-instruction { color:#f7e7bc; font-size:13px; font-weight:800; }
+    #sv-simple-steps { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin:8px 0; }
+    #sv-simple-steps span { padding:6px 4px; border-radius:8px; background:rgba(255,255,255,.06); color:#8daab4; text-align:center; font-size:10px; font-weight:800; }
+    #sv-simple-steps span.active { background:rgba(74,222,128,.18); color:#8ff3b0; outline:1px solid rgba(74,222,128,.45); }
+    #sv-task-start { min-height:58px; font-size:16px; background:#22c55e; color:#062b15; border:0; }
+    #sv-task-start.stop { background:#ef4444; color:#fff; }
+    #sv-task-start:disabled { background:#475569; color:#cbd5e1; cursor:not-allowed; }
     #sv-safety { color:#fca5a5; font-size:10px; line-height:1.4; margin:6px 0 0; }
+    #sv-secondary-actions { display:flex; gap:6px; margin-top:6px; }
+    #sv-advanced { margin-top:8px; border-top:1px solid rgba(255,255,255,.1); padding-top:7px; }
+    #sv-advanced summary { cursor:pointer; color:#93b9c7; font-size:11px; font-weight:800; padding:4px; }
+    #sv-advanced[open] summary { margin-bottom:7px; }
     #survey-panel .sv-row { display: flex; gap: 7px; margin-bottom: 7px; }
     .sv-btn {
       flex: 1; min-height: 46px; border-radius: 12px; cursor: pointer;
@@ -624,6 +648,10 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     #sv-audit-current { color: #ffffff; font-size: 16px; overflow-wrap: anywhere; }
     #sv-audit-help { color: #9fc9d8; font-size: 11px; line-height: 1.5; }
     body.nav-active #survey-panel { display: none; }
+    @media (max-width: 640px) {
+      #survey-panel { max-height: 58dvh; }
+      #survey-panel .sv-head { margin-bottom:4px; }
+    }
   `;
   document.head.appendChild(style);
 
@@ -633,47 +661,54 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
   const panel = document.createElement('div');
   panel.id = 'survey-panel';
   panel.innerHTML = `
-    <div class="sv-head"><span>測量モード</span><span id="sv-gps">GPS待機中</span></div>
-    <div class="sv-stats" id="sv-stats"></div>
+    <div class="sv-head"><span>現地MAP調査</span><span id="sv-gps">GPS待機中</span></div>
     <section id="sv-guide" aria-label="適応型調査ガイド">
       <div id="sv-guide-head"><b id="sv-phase">調査計画を作成中</b><span id="sv-score">0%</span></div>
       <div id="sv-progress-track"><div id="sv-progress-fill"></div></div>
+      <div id="sv-task-card" class="hidden">
+        <span id="sv-task-count">いまやること</span>
+        <strong id="sv-action-title">GPSを取得しています</strong>
+        <div id="sv-distance"></div>
+        <div id="sv-route-key"><span class="move">青：開始点まで</span><span class="measure">ピンク：測定する道</span></div>
+        <strong id="sv-task-title"></strong>
+        <p id="sv-task-instruction"></p>
+        <div id="sv-simple-steps"><span>① 開始点へ</span><span>② 道を歩く</span><span>③ ゴールで停止</span></div>
+        <button id="sv-task-start" class="sv-btn" type="button">GPSを待っています</button>
+        <div id="sv-secondary-actions">
+          <button id="sv-task-speak" class="sv-btn sv-small" type="button">🔊 読み上げ</button>
+          <button id="sv-plan-refresh" class="sv-btn" type="button">現在地から引き直す</button>
+          <button id="sv-task-skip" class="sv-btn sv-small" type="button">別の場所</button>
+        </div>
+        <p id="sv-safety">安全優先：歩きながら画面を注視せず、立入禁止区域や車道には入らないでください。</p>
+      </div>
+    </section>
+    <details id="sv-advanced">
+      <summary>進捗・手動操作（通常は開かなくてOK）</summary>
       <div id="sv-progress-text"></div>
       <div id="sv-plan-controls">
         <select id="sv-budget" aria-label="調査時間">
           <option value="15">15分</option><option value="30" selected>30分</option><option value="60">60分</option>
         </select>
-        <button id="sv-plan-refresh" class="sv-btn" type="button">現在地から再計画</button>
       </div>
-      <div id="sv-task-card" class="hidden">
-        <span id="sv-task-count"></span><strong id="sv-task-title"></strong>
-        <p id="sv-task-reason"></p><p id="sv-task-instruction"></p>
-        <div class="sv-row">
-          <button id="sv-task-start" class="sv-btn sv-primary" type="button">この調査を開始</button>
-          <button id="sv-task-speak" class="sv-btn sv-small" type="button" title="指示を読み上げる">読上</button>
-          <button id="sv-task-skip" class="sv-btn sv-small" type="button">後回し</button>
-        </div>
-        <p id="sv-safety">安全優先：歩きながら画面を注視せず、立入禁止区域や車道には入らないでください。</p>
+      <div class="sv-stats" id="sv-stats"></div>
+      <p id="sv-task-reason"></p>
+      <div class="sv-row">
+        <button id="sv-log" class="sv-btn" type="button">手動記録</button>
+        <button id="sv-node" class="sv-btn sv-small" type="button">点追加</button>
+        <button id="sv-undo" class="sv-btn sv-small" type="button">戻す</button>
       </div>
-    </section>
-    <div class="sv-row">
-      <button id="sv-log" class="sv-btn sv-primary" type="button">記録を開始</button>
-      <button id="sv-node" class="sv-btn sv-small" type="button" title="現在地にノードを追加">＋</button>
-      <button id="sv-undo" class="sv-btn sv-small" type="button" title="直前の記録を取り消す">戻す</button>
-    </div>
-    <div class="sv-row">
-      <button id="sv-poi" class="sv-btn" type="button">入口を記録</button>
-      <button id="sv-point" class="sv-btn" type="button">＋新規スポット</button>
-    </div>
-    <div class="sv-row">
-      <button id="sv-audit" class="sv-btn sv-primary" type="button">建物名をチェック</button>
-    </div>
-    <label class="sv-check"><input type="checkbox" id="sv-replace"> 略図の通路を置き換える（全域測量後にON）</label>
-    <div class="sv-row">
-      <button id="sv-export" class="sv-btn sv-primary" type="button">書き出し</button>
-      <button id="sv-restore" class="sv-btn" type="button"${syncToken ? '' : ' hidden'}>PCから復元</button>
-      <button id="sv-clear" class="sv-btn sv-danger" type="button" title="測量データを全削除">削除</button>
-    </div>`;
+      <div class="sv-row">
+        <button id="sv-poi" class="sv-btn" type="button">入口</button>
+        <button id="sv-point" class="sv-btn" type="button">新規スポット</button>
+        <button id="sv-audit" class="sv-btn" type="button">建物名</button>
+      </div>
+      <label class="sv-check"><input type="checkbox" id="sv-replace"> 進捗100%後に実測MAPへ置換</label>
+      <div class="sv-row">
+        <button id="sv-export" class="sv-btn sv-primary" type="button">書き出し</button>
+        <button id="sv-restore" class="sv-btn" type="button"${syncToken ? '' : ' hidden'}>PC復元</button>
+        <button id="sv-clear" class="sv-btn sv-danger" type="button">削除</button>
+      </div>
+    </details>`;
   uiRoot.appendChild(panel);
 
   const picker = document.createElement('div');
@@ -787,6 +822,8 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     budget: panel.querySelector('#sv-budget'),
     taskCard: panel.querySelector('#sv-task-card'),
     taskCount: panel.querySelector('#sv-task-count'),
+    actionTitle: panel.querySelector('#sv-action-title'),
+    distance: panel.querySelector('#sv-distance'),
     taskTitle: panel.querySelector('#sv-task-title'),
     taskReason: panel.querySelector('#sv-task-reason'),
     taskInstruction: panel.querySelector('#sv-task-instruction'),
@@ -910,6 +947,9 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     if (!ui?.taskCard) return;
     if (reset) currentTaskIndex = 0;
     currentPlan = createSurveyPlan(state, here(), state.planner.budgetMin);
+    const plannedHere = here();
+    lastPlannerPosition = plannedHere ? gpsToWorld(plannedHere.lat, plannedHere.lng) : null;
+    plannerRefreshAt = Date.now();
     const p = currentPlan.progress;
     ui.phase.textContent = p.productionReady ? '公開品質基準を達成' : currentPlan.phase.label;
     ui.score.textContent = `${p.score}%`;
@@ -925,20 +965,10 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
       if (!p.productionReady) ui.progressText.textContent += ' ・ 現在条件で候補なし（後回し解除または再測定が必要）';
       return;
     }
-    const hp = here();
-    const hw = hp ? gpsToWorld(hp.lat, hp.lng) : null;
-    const toStartM = hw ? Math.round(Math.hypot(hw.x - task.startWorld.x, hw.z - task.startWorld.z) * GEO.meterPerUnit) : null;
-    ui.taskCount.textContent = `次の調査 1/${currentPlan.tasks.length} ・ この作業約${task.estimatedMin}分／計画約${currentPlan.estimatedMin}分` +
-      (toStartM != null ? ` ・ 開始地点まで約${toStartM}m` : '') +
-      ` ・ GPS成功見込${Math.round((task.expectedGpsReliability ?? 0.5) * 100)}%`;
-    ui.taskTitle.textContent = task.title;
+    ui.taskCount.textContent = `いまやること ・ 約${task.estimatedMin}分`;
+    ui.taskTitle.textContent = task.kind === 'path' ? `測定区間：${task.title}` : task.title;
     ui.taskReason.textContent = `理由：${task.reason}`;
-    ui.taskInstruction.textContent = task.instruction;
-    ui.taskStart.textContent = logging ? '測定を停止して判定' : (
-      task.kind === 'building' ? '名称・入口を確認' :
-      task.kind === 'control' ? '15秒測定を開始' :
-      task.kind === 'perimeter' ? '外周測定を開始' : 'この通路を測定開始'
-    );
+    renderTaskGuidance(task);
   }
 
   function drawPlannerTask(task) {
@@ -947,23 +977,139 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
       child.geometry?.dispose(); child.material?.dispose();
     }
     if (!task?.startWorld) return;
-    const start = new THREE.Vector3(task.startWorld.x, 1.15, task.startWorld.z);
-    const end = task.endWorld
-      ? new THREE.Vector3(task.endWorld.x, 1.15, task.endWorld.z) : start.clone();
-    if (task.kind === 'path') {
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([start, end]),
-        new THREE.LineBasicMaterial({ color: 0xff4fd8, depthTest: false })
+    const v3 = p => new THREE.Vector3(p.x, 1.05, p.z);
+    const addRoute = (worldPoints, color, radius, opacity) => {
+      const points = worldPoints?.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.z)).map(v3) ?? [];
+      if (points.length < 2) return;
+      const curve = points.length === 2
+        ? new THREE.LineCurve3(points[0], points[1])
+        : new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.12);
+      const tube = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, Math.max(16, points.length * 10), radius, 8, false),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false })
       );
-      line.renderOrder = 42; guideGroup.add(line);
+      tube.renderOrder = 41; guideGroup.add(tube);
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1], b = points[i];
+        if (a.distanceTo(b) < 2) continue;
+        const arrow = new THREE.Mesh(
+          new THREE.ConeGeometry(radius * 1.9, radius * 4.2, 10),
+          new THREE.MeshBasicMaterial({ color, depthTest: false })
+        );
+        const direction = b.clone().sub(a).normalize();
+        arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        arrow.position.copy(a).lerp(b, 0.68);
+        arrow.renderOrder = 44; guideGroup.add(arrow);
+      }
+    };
+    const start = v3(task.startWorld);
+    const end = task.endWorld
+      ? v3(task.endWorld) : start.clone();
+    if (!logging && Array.isArray(task.approachWorld)) addRoute(task.approachWorld, 0x22d3ee, 0.38, 0.72);
+    if (task.kind === 'path') {
+      addRoute([task.startWorld, task.endWorld], 0xff4fd8, 0.72, 0.92);
     }
-    for (const [p, color] of [[start, 0x4ade80], [end, 0xff4fd8]]) {
+    const markers = start.distanceTo(end) < 0.5
+      ? [[start, 0x4ade80]] : [[start, 0x4ade80], [end, 0xff4fd8]];
+    for (const [p, color] of markers) {
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(1.2, 1.65, 36),
+        new THREE.RingGeometry(1.8, 2.65, 36),
         new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, depthTest: false })
       );
       ring.rotation.x = -Math.PI / 2; ring.position.copy(p); ring.renderOrder = 43;
       guideGroup.add(ring);
+      const beacon = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.14, 0.42, 6, 10),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.72, depthTest: false })
+      );
+      beacon.position.copy(p).add(new THREE.Vector3(0, 3, 0)); beacon.renderOrder = 42;
+      guideGroup.add(beacon);
+    }
+    // 指示されたルート全体を自動で画面内へ入れ、カメラを回して探す操作を不要にする。
+    if (camera && mapControls) {
+      const focusWorld = logging && task.kind === 'path'
+        ? [task.startWorld, task.endWorld]
+        : [...(task.approachWorld ?? []), task.startWorld, task.endWorld].filter(Boolean);
+      if (focusWorld.length) {
+        const minX = Math.min(...focusWorld.map(p => p.x)), maxX = Math.max(...focusWorld.map(p => p.x));
+        const minZ = Math.min(...focusWorld.map(p => p.z)), maxZ = Math.max(...focusWorld.map(p => p.z));
+        const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+        const span = Math.max(18, maxX - minX, maxZ - minZ);
+        const height = Math.min(155, Math.max(34, span * 1.35));
+        mapControls.target.set(cx, 0, cz);
+        camera.position.set(cx, height, cz + height * 0.68);
+        camera.lookAt(cx, 0, cz);
+        mapControls.update();
+      }
+    }
+  }
+
+  function renderTaskGuidance(task) {
+    if (!task) return;
+    const hp = here();
+    const hw = hp ? gpsToWorld(hp.lat, hp.lng) : null;
+    const startM = hw ? Math.round(Math.hypot(hw.x - task.startWorld.x, hw.z - task.startWorld.z) * GEO.meterPerUnit) : null;
+    const endM = hw && task.endWorld
+      ? Math.round(Math.hypot(hw.x - task.endWorld.x, hw.z - task.endWorld.z) * GEO.meterPerUnit) : null;
+    const steps = [...panel.querySelectorAll('#sv-simple-steps span')];
+    const stepLabels = task.kind === 'path'
+      ? ['① STARTへ', '② 道を歩く', '③ ゴールで停止']
+      : task.kind === 'control'
+        ? ['① 測定点へ', '② 15秒停止', '③ 自動保存']
+        : task.kind === 'building'
+          ? ['① 建物へ', '② 名称確認', '③ 入口15秒']
+          : ['① 開始点へ', '② 外周一周', '③ 戻って停止'];
+    steps.forEach((s, i) => { s.textContent = stepLabels[i]; });
+    const measureKey = panel.querySelector('#sv-route-key .measure');
+    measureKey.hidden = task.kind !== 'path';
+    steps.forEach(s => s.classList.remove('active'));
+    ui.taskStart.classList.toggle('stop', logging);
+    ui.taskStart.disabled = !hp;
+
+    if (!hp) {
+      steps[0]?.classList.add('active');
+      ui.actionTitle.textContent = 'GPSを取得しています';
+      ui.distance.textContent = '空が見える場所で少し待ってください';
+      ui.taskInstruction.textContent = '位置情報を許可すると、歩く道を地図上に表示します。';
+      ui.taskStart.textContent = 'GPSを待っています';
+      return;
+    }
+    if (logging) {
+      const atGoal = task.kind === 'path' && endM != null && endM <= 12;
+      steps[atGoal ? 2 : 1]?.classList.add('active');
+      ui.actionTitle.textContent = atGoal ? '③ ゴールに着きました' : (
+        task.kind === 'building-perimeter' ? '② 建物の外壁に沿って一周' : '② ピンクの矢印に沿って歩く'
+      );
+      ui.distance.textContent = task.kind === 'path' && endM != null
+        ? `ゴールまで約 ${endM}m` : '開始地点へ戻ったら停止';
+      ui.taskInstruction.textContent = atGoal
+        ? '立ち止まって、下の赤いボタンを押してください。'
+        : '画面を見続けず、安全を確認しながら表示ルート上を歩いてください。';
+      ui.taskStart.textContent = '③ 測定を停止して品質判定';
+      return;
+    }
+
+    steps[0]?.classList.add('active');
+    const close = startM != null && startM <= 18;
+    ui.distance.textContent = startM != null ? `緑のSTARTまで約 ${startM}m` : '';
+    if (task.kind === 'path') {
+      ui.actionTitle.textContent = close ? '① 緑のSTARTに到着' : '① 青い線で緑のSTARTへ移動';
+      ui.taskInstruction.textContent = close
+        ? 'その場で下の開始ボタンを押し、ピンクの道を矢印方向へ歩いてください。'
+        : 'まず青い線をたどって緑の丸へ行きます。まだ測定開始は押さなくてOKです。';
+      ui.taskStart.textContent = close ? '② このピンクの道を測定開始' : '緑のSTARTに着いたら押す';
+    } else if (task.kind === 'control') {
+      ui.actionTitle.textContent = close ? `① ${task.title.replace('を基準点として測定', '')}に到着` : '① 青い線で測定地点へ移動';
+      ui.taskInstruction.textContent = '緑の丸の近くに着いたら立ち止まり、ボタンを押して15秒間動かないでください。';
+      ui.taskStart.textContent = 'ここで15秒測定する';
+    } else if (task.kind === 'building') {
+      ui.actionTitle.textContent = close ? '① 建物の表札と入口を確認' : '① 青い線でこの建物へ移動';
+      ui.taskInstruction.textContent = '現地の表札が見える入口前でボタンを押してください。';
+      ui.taskStart.textContent = '建物名と入口を記録する';
+    } else {
+      ui.actionTitle.textContent = close ? '① 外周測定の開始地点に到着' : '① 青い線で建物へ移動';
+      ui.taskInstruction.textContent = '開始後、外壁に沿って一周し、この緑の丸へ戻ります。';
+      ui.taskStart.textContent = '② 建物外周の測定を開始';
     }
   }
 
@@ -971,9 +1117,21 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     if (logging) { await setLogging(false); return; }
     const task = currentPlan?.tasks?.[currentTaskIndex];
     if (!task) return;
+    const hp = here();
+    const hw = hp ? gpsToWorld(hp.lat, hp.lng) : null;
+    const startM = hw ? Math.hypot(hw.x - task.startWorld.x, hw.z - task.startWorld.z) * GEO.meterPerUnit : Infinity;
+    if (['path', 'perimeter'].includes(task.kind) && startM > 45) {
+      toast(`まだ開始地点まで約${Math.round(startM)}mあります。青い線で緑のSTARTへ移動してください`, 5200);
+      return;
+    }
     if (task.kind === 'control') {
       const place = PLACES.find(p => p.id === task.targetId);
-      if (place) await recordPoi(place, true);
+      if (place) {
+        ui.taskStart.disabled = true;
+        ui.taskStart.textContent = '15秒間そのまま動かないでください';
+        await recordPoi(place, true);
+        ui.taskStart.disabled = false;
+      }
       return;
     }
     if (task.kind === 'building') {
@@ -1002,7 +1160,9 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
     const task = currentPlan?.tasks?.[currentTaskIndex];
     if (!task || !('speechSynthesis' in window)) { toast('この端末は読み上げに対応していません'); return; }
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(`${task.title}。${task.instruction}。理由は、${task.reason}です。`);
+    const u = new SpeechSynthesisUtterance(
+      `${ui.actionTitle.textContent}。${ui.distance.textContent}。${ui.taskInstruction.textContent}`
+    );
     u.lang = 'ja-JP'; u.rate = 1.02;
     speechSynthesis.speak(u);
   }
@@ -1016,6 +1176,16 @@ export function initSurvey({ scene, geoState, startGeolocation, toast }) {
       ui.gps.textContent = `GPS ±${acc}m${acc > ACCURACY_LIMIT_M ? '（精度不足）' : ''}`;
       ui.gps.classList.toggle('sv-bad', acc > ACCURACY_LIMIT_M);
     }
+    const currentPosition = here();
+    if (currentPosition && !logging) {
+      const world = gpsToWorld(currentPosition.lat, currentPosition.lng);
+      const movedM = lastPlannerPosition
+        ? Math.hypot(world.x - lastPlannerPosition.x, world.z - lastPlannerPosition.z) * GEO.meterPerUnit : Infinity;
+      // 初回GPS取得時と大きく移動した時だけ再計画し、歩いている途中で指示が頻繁に変わるのを防ぐ。
+      const refreshDelay = lastPlannerPosition ? 8000 : 1200;
+      if ((!lastPlannerPosition || movedM >= 80) && Date.now() - plannerRefreshAt >= refreshDelay) refreshPlanner(true);
+    }
+    renderTaskGuidance(currentPlan?.tasks?.[currentTaskIndex]);
     const done = Object.keys(state.buildings).length + Object.keys(state.places).length;
     const total = SURVEY_SHOPS.length + PLACES.length;
     const audited = Object.keys(state.audits).length;
