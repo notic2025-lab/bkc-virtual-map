@@ -12,7 +12,7 @@ import { SURVEY as BASE_SURVEY } from './survey-data.js';
 import {
   SURVEY_QUALITY, createSurveyPlan, surveyProgress, evaluateTrack, perimeterFromTrack,
   buildProductionGraph, deriveGeoReference,
-} from './survey-planner.js?v=20260814e';
+} from './survey-planner.js?v=20260814f';
 
 const LS_KEY = 'bkc-survey-v1'; // キーは維持して既存の現地データを自動移行する
 const ACCURACY_LIMIT_M = 5;   // 完成地図へ採用できるGPS精度上限（95%半径）
@@ -68,6 +68,8 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
   let activePlannerTask = null;
   let currentPlan = null;
   let currentTaskIndex = 0;
+  let selectedMapShop = null;
+  let stationaryMeasurement = false;
   let lastPlannerPosition = null;
   let plannerRefreshAt = 0;
   const actions = [];      // 取り消し用の操作履歴
@@ -652,6 +654,26 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     #sv-audit-current { color: #ffffff; font-size: 16px; overflow-wrap: anywhere; }
     #sv-audit-help { color: #9fc9d8; font-size: 11px; line-height: 1.5; }
     body.nav-active #survey-panel { display: none; }
+    body.survey-building-mode #survey-panel {
+      width:min(410px,calc(100vw - 16px)); max-height:260px; overflow:hidden;
+      padding:9px 10px; border-color:rgba(74,222,128,.48);
+    }
+    body.survey-building-mode #sv-guide { padding:8px 9px; }
+    body.survey-building-mode #sv-guide-head { margin-bottom:5px; }
+    body.survey-building-mode #sv-task-card { padding-top:6px; }
+    body.survey-building-mode #sv-task-count,
+    body.survey-building-mode #sv-route-key,
+    body.survey-building-mode #sv-task-title,
+    body.survey-building-mode #sv-simple-steps,
+    body.survey-building-mode #sv-quick-place,
+    body.survey-building-mode #sv-safety,
+    body.survey-building-mode #sv-advanced { display:none; }
+    body.survey-building-mode.survey-buildings-complete #survey-panel { max-height:58dvh; overflow-y:auto; }
+    body.survey-building-mode.survey-buildings-complete #sv-advanced { display:block; }
+    body.survey-building-mode #sv-action-title { font-size:18px; margin:3px 0; }
+    body.survey-building-mode #sv-distance { font-size:12px; margin-bottom:3px; }
+    body.survey-building-mode #sv-task-instruction { font-size:12px; line-height:1.35; margin-bottom:6px; }
+    body.survey-building-mode #sv-task-start { min-height:54px; font-size:15px; }
     @media (max-width: 640px) {
       #survey-panel { max-height: 58dvh; }
       #survey-panel .sv-head { margin-bottom:4px; }
@@ -677,7 +699,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
         <strong id="sv-task-title"></strong>
         <p id="sv-task-instruction"></p>
         <div id="sv-simple-steps"><span>① 開始点へ</span><span>② 道を歩く</span><span>③ ゴールで停止</span></div>
-        <button id="sv-task-start" class="sv-btn" type="button">GPSを待っています</button>
+        <button id="sv-task-start" class="sv-btn" type="button">地図上の建物をタップ</button>
         <button id="sv-quick-place" class="sv-btn" type="button">📍 今いる建物の位置を測る</button>
         <p id="sv-safety">安全優先：歩きながら画面を注視せず、立入禁止区域や車道には入らないでください。</p>
       </div>
@@ -840,6 +862,68 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
   };
   ui.budget.value = String(state.planner.budgetMin);
   ui.replace.checked = !!state.replaceGraph;
+  function syncSurveyStage() {
+    const buildingMode = state.planner.stage !== 'routes';
+    document.body.classList.toggle('survey-building-mode', buildingMode);
+    if (!buildingMode) {
+      document.body.classList.remove('survey-buildings-complete');
+      selectedMapShop = null;
+      window.dispatchEvent(new CustomEvent('bkc-survey-highlight-shop', { detail: { shopId: null } }));
+    }
+  }
+  function selectMapShop(shopId) {
+    if (state.planner.stage === 'routes') return;
+    selectedMapShop = SURVEY_SHOPS.find(shop => shop.id === shopId) ?? null;
+    window.dispatchEvent(new CustomEvent('bkc-survey-highlight-shop', {
+      detail: { shopId: selectedMapShop?.id ?? null },
+    }));
+    renderMapBuildingSelection(surveyProgress(state));
+    if (selectedMapShop) toast(`「${selectedMapShop.name}」を選択しました`);
+  }
+  function renderMapBuildingSelection(progress = surveyProgress(state)) {
+    if (state.planner.stage === 'routes' || !ui?.taskCard) return;
+    document.body.classList.toggle('survey-buildings-complete', progress.entrancesDone === progress.entrancesTotal);
+    ui.taskCard.classList.remove('hidden');
+    ui.taskStart.hidden = false;
+    ui.taskStart.classList.remove('stop');
+    if (stationaryMeasurement) {
+      ui.actionTitle.textContent = `「${selectedMapShop?.name ?? '建物'}」の入口を測定中`;
+      ui.distance.textContent = '15秒間、そのまま動かないでください';
+      ui.taskInstruction.textContent = 'スマホを持ったまま屋外の入口中央で静止してください。';
+      ui.taskStart.textContent = '測定中…動かないでください';
+      ui.taskStart.disabled = true;
+      return;
+    }
+    const hp = here();
+    const accuracy = Number.isFinite(hp?.accuracy) ? hp.accuracy : null;
+    const gpsReady = accuracy != null && accuracy <= ACCURACY_LIMIT_M;
+    if (!selectedMapShop) {
+      ui.actionTitle.textContent = '① 地図上の建物をタップ';
+      ui.distance.textContent = `建物位置 ${progress.entrancesDone}/${progress.entrancesTotal}棟`;
+      ui.taskInstruction.textContent = '測りたい建物本体か、その名前ラベルを地図上で直接タップしてください。';
+      ui.taskStart.textContent = '先に地図の建物をタップしてください';
+      ui.taskStart.disabled = true;
+      return;
+    }
+    const alreadyRecorded = !!state.buildings[selectedMapShop.id];
+    ui.actionTitle.textContent = `選択中：${selectedMapShop.name}`;
+    ui.distance.textContent = accuracy == null ? 'GPSを取得中' : `現在のGPS精度 ±${Math.round(accuracy)}m`;
+    if (!gpsReady) {
+      ui.taskInstruction.textContent = accuracy == null
+        ? '入口前の屋外で待ってください。GPSを取得すると測定できます。'
+        : `今は精度不足です。入口前の屋外で、GPSが±${ACCURACY_LIMIT_M}m以下になるまで待ってください。`;
+      ui.taskStart.textContent = accuracy == null ? 'GPSを待っています' : `GPS ±${Math.round(accuracy)}m — 今は測れません`;
+      ui.taskStart.disabled = true;
+      return;
+    }
+    ui.taskInstruction.textContent = 'この建物の屋外入口中央に立っているなら、押して15秒間動かないでください。';
+    ui.taskStart.textContent = alreadyRecorded
+      ? '今ここの入口を追加測定する（15秒）'
+      : '今ここの入口にいる（15秒測定）';
+    ui.taskStart.disabled = false;
+  }
+  syncSurveyStage();
+  window.addEventListener('bkc-survey-select-shop', event => selectMapShop(event.detail?.shopId));
   ui.replace.addEventListener('change', () => {
     if (ui.replace.checked) {
       const p = surveyProgress(state);
@@ -889,20 +973,37 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     }
     if (!confirm('建物位置の測定は完了しています。通路・外周調査へ進みますか？')) return;
     state.planner.stage = 'routes';
-    save(); refreshPlanner(true);
+    syncSurveyStage(); save(); refreshPlanner(true);
   });
 
-  async function quickRecordBuilding(poi) {
-    if (!here()) { toast('GPSを取得中です。空の見える場所で少し待ってください'); return; }
-    const accepted = confirm(
-      `今、「${poi.name}」の屋外正面入口中央にいますか？\n\n建物内では測らないでください。OKを押すと15秒測定します。`
-    );
-    if (!accepted) return;
+  async function quickRecordBuilding(poi, confirmPosition = true) {
+    const position = here();
+    if (!position || !Number.isFinite(position.accuracy)) {
+      toast('GPSを取得中です。入口前の屋外で少し待ってください');
+      return;
+    }
+    if (position.accuracy > ACCURACY_LIMIT_M) {
+      toast(`GPS精度が±${Math.round(position.accuracy)}mです。屋外で±${ACCURACY_LIMIT_M}m以下になるまで待ってください`, 5200);
+      return;
+    }
+    if (confirmPosition) {
+      const accepted = confirm(
+        `今、「${poi.name}」の屋外正面入口中央にいますか？\n\n建物内では測らないでください。OKを押すと15秒測定します。`
+      );
+      if (!accepted) return;
+    }
     const audit = state.audits[poi.id];
     if (!audit || !['ok', 'corrected'].includes(audit.status)) {
       saveAudit(poi, { status: 'ok', observedName: '', note: 'かんたん記録で現地確認' });
     }
-    await recordPoi(poi, false);
+    stationaryMeasurement = true;
+    renderMapBuildingSelection();
+    try {
+      await recordPoi(poi, false);
+    } finally {
+      stationaryMeasurement = false;
+      renderMapBuildingSelection();
+    }
   }
 
   function openPicker() {
@@ -1013,6 +1114,13 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
       `基準点 ${p.controlsDone}/${p.controlsTotal} ・ 通路方向 ${p.edgeDirectionsDone}/${p.edgeDirectionsTotal}` +
       ` ・ 名称 ${p.namesDone}/${p.namesTotal} ・ 入口 ${p.entrancesDone}/${p.entrancesTotal}` +
       ` ・ 外周 ${p.footprintsDone}/${p.footprintsTotal} ・ 良好GPS ${Math.round(p.gpsGoodRatio * 100)}%`;
+    if (buildingStage) {
+      // 建物段階ではAI候補を押しつけず、利用者が地図から直接選んだ建物だけを測る。
+      drawPlannerTask(null);
+      ui.taskCard.classList.remove('hidden');
+      renderMapBuildingSelection(p);
+      return;
+    }
     const task = currentPlan.tasks[currentTaskIndex];
     drawPlannerTask(task);
     ui.taskCard.classList.toggle('hidden', !task && !buildingStage);
@@ -1185,6 +1293,14 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
 
   async function startCurrentTask() {
     if (logging) { await setLogging(false); return; }
+    if (state.planner.stage !== 'routes') {
+      if (!selectedMapShop) {
+        toast('先に地図上の測りたい建物をタップしてください');
+        return;
+      }
+      await quickRecordBuilding(selectedMapShop, false);
+      return;
+    }
     const task = currentPlan?.tasks?.[currentTaskIndex];
     if (!task) return;
     const hp = here();
@@ -1255,7 +1371,8 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
       const refreshDelay = lastPlannerPosition ? 8000 : 1200;
       if ((!lastPlannerPosition || movedM >= 80) && Date.now() - plannerRefreshAt >= refreshDelay) refreshPlanner(true);
     }
-    renderTaskGuidance(currentPlan?.tasks?.[currentTaskIndex]);
+    if (state.planner.stage !== 'routes') renderMapBuildingSelection(surveyProgress(state));
+    else renderTaskGuidance(currentPlan?.tasks?.[currentTaskIndex]);
     const done = Object.keys(state.buildings).length + Object.keys(state.places).length;
     const total = SURVEY_SHOPS.length + PLACES.length;
     const audited = Object.keys(state.audits).length;
@@ -1275,5 +1392,5 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
   redraw();
   updateHud();
   refreshPlanner(true);
-  toast('測量モード: 通路は往復測定、建物では「建物名をチェック」を使ってください', 5200);
+  toast('地図上の建物をタップし、入口前で15秒測定してください', 5200);
 }
