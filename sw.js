@@ -4,22 +4,22 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v28-simple-route-survey';
+const CACHE_VERSION = 'bkc-map-v29-one-tap-place-survey';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/style.css?v=20260728k',
-  './js/app.js?v=20260814c',
+  './js/app.js?v=20260814d',
   './js/walk-learn.js?v=20260730b',
   './js/data.js',
   './js/survey-data.js',
   './js/firebase-config.js',
   './js/live.js?v=20260729b',
   './js/boot.js?v=20260728k',
-  './js/survey.js?v=20260814c',
-  './js/survey-planner.js?v=20260814c',
+  './js/survey.js?v=20260814d',
+  './js/survey-planner.js?v=20260814d',
   './js/ar.js',
   './vendor/three.module.js',
   './vendor/OrbitControls.js',
