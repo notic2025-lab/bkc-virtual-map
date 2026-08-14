@@ -8,15 +8,21 @@ import {
   FLOORS, FLOOR_ORDER, FLOOR_LINKS, WATERS, FIELDS,
 } from './data.js';
 import { startAR } from './ar.js';
+import { SURVEY } from './survey-data.js';
 
-const METER_PER_UNIT = 4; // 1ワールド単位 ≈ 4m（キャンパス全幅 ≈ 680m）
+const METER_PER_UNIT = GEO.meterPerUnit; // GPS変換・距離表示・到着判定で同じ換算値を使う
 const isMobileDevice = matchMedia('(max-width: 640px), (pointer: coarse)').matches;
 const prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isSurveyedMap = !!SURVEY?.replaceGraph;
 
 // ------------------------------------------------------------
 // 基本セットアップ
 // ------------------------------------------------------------
 const canvas = document.getElementById('scene');
+if (isSurveyedMap) {
+  const credit = document.querySelector('#map-credit span:last-child');
+  if (credit) credit.textContent = '実測データ';
+}
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: !isMobileDevice,
@@ -169,8 +175,9 @@ function makeCampusGroundTexture() {
     g.beginPath(); g.arc(x, y, 18 + (i % 5) * 5, 0, Math.PI * 2); g.fill();
   }
 
-  // グラウンド・競技場
-  for (const f of FIELDS) {
+  // グラウンド・競技場。実測モードでは未測量の略図要素を非表示にし、
+  // 精密なレイヤーと概略レイヤーが混ざって見えるのを防ぐ。
+  for (const f of (isSurveyedMap ? [] : FIELDS)) {
     const x = px(f.left), y = py(f.top);
     const w = f.w / 100 * W, h = f.h / 100 * H;
     g.save();
@@ -216,7 +223,7 @@ function makeCampusGroundTexture() {
   }
 
   // 池
-  for (const wtr of WATERS) {
+  for (const wtr of (isSurveyedMap ? [] : WATERS)) {
     const x = px(wtr.left), y = py(wtr.top);
     const rx = wtr.rx / 100 * W, ry = wtr.ry / 100 * H;
     g.fillStyle = '#6d9eb4';
@@ -334,6 +341,24 @@ function roundedBoxGeo(w, d, h, r = 0.8) {
   return geo;
 }
 
+// 現地で一周測定した建物外周を、そのまま押し出し形状へ変換する。
+// ShapeのY軸はrotateX後に-world Zへ写るため、ローカルZを反転して渡す。
+function surveyedFootprintGeo(footprint, centerX, centerZ, h) {
+  if (!Array.isArray(footprint) || footprint.length < 4) return null;
+  const pts = footprint.map(p => gpsToWorld(p.lat, p.lng))
+    .filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
+  if (pts.length < 4) return null;
+  const shape = new THREE.Shape();
+  shape.moveTo(pts[0].x - centerX, -(pts[0].z - centerZ));
+  for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i].x - centerX, -(pts[i].z - centerZ));
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: h, bevelEnabled: true, bevelThickness: 0.18, bevelSize: 0.18, bevelSegments: 1,
+  });
+  geo.rotateX(-Math.PI / 2);
+  return geo;
+}
+
 function makeLabelSprite(text, { bg = '#ffffff', fg = '#1a2233', border = '#38bdf8', scale = 1 } = {}) {
   const pad = 28, fs = 44;
   const c = document.createElement('canvas');
@@ -395,7 +420,8 @@ function buildShopVisual(shop) {
   // 区画（w×d）と位置は公式座標。半透明ガラスとして立体化し、公式平面図が
   // 透けて見えるようにすることで没入感と情報の正確さを両立する。
   const h = shop.size.h ?? 4;
-  const geo = roundedBoxGeo(shop.size.w, shop.size.d, h);
+  const geo = surveyedFootprintGeo(shop.surveyFootprint, x, z, h)
+    ?? roundedBoxGeo(shop.size.w, shop.size.d, h);
   const mat = new THREE.MeshStandardMaterial({
     color: col, roughness: 0.72, metalness: 0.0,
     transparent: true, opacity: GLASS_OPACITY,
@@ -412,16 +438,19 @@ function buildShopVisual(shop) {
 
   // 発光する輪郭フレーム（区画の外形＝ホログラム境界）
   const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(shop.size.w, h, shop.size.d)),
+    new THREE.EdgesGeometry(geo, 28),
     new THREE.LineBasicMaterial({ color: 0x34413c, transparent: true, opacity: 0.28 })
   );
-  edges.position.set(x, fy + h / 2, z);
+  edges.position.set(x, fy, z);
   edges.renderOrder = 5;
   shopGroup.add(edges);
 
   // 屋上のカテゴリー色クラウン（発光アクセント）
+  const crownGeo = shop.surveyFootprint
+    ? surveyedFootprintGeo(shop.surveyFootprint, x, z, 0.35)
+    : roundedBoxGeo(shop.size.w * 0.9, shop.size.d * 0.9, 0.35);
   const crown = new THREE.Mesh(
-    roundedBoxGeo(shop.size.w * 0.9, shop.size.d * 0.9, 0.35),
+    crownGeo ?? roundedBoxGeo(shop.size.w * 0.9, shop.size.d * 0.9, 0.35),
     new THREE.MeshStandardMaterial({
       color: col, emissive: 0x000000, emissiveIntensity: 0,
       roughness: 0.68, metalness: 0, envMapIntensity: 0.15,
@@ -496,6 +525,7 @@ for (const d of DECOR) {
 // 並木・広場の演出
 // ------------------------------------------------------------
 const treeGroup = new THREE.Group();
+treeGroup.visible = !isSurveyedMap;
 scene.add(treeGroup);
 {
   const trunkGeo = new THREE.CylinderGeometry(0.22, 0.3, 1.6, 6);
@@ -844,7 +874,17 @@ function nearestNode(pos, fid) {
 function buildRouteLegs(startPos, startFloor, toId) {
   const to = getPoi(toId);
   if (!to) return null;
-  const nodePath = astar(nearestNode(startPos, startFloor), `${to.floor}:${to.entry}`);
+  const startNodeId = nearestNode(startPos, startFloor);
+  const entryCandidates = (Array.isArray(to.entries) && to.entries.length ? to.entries : [to.entry])
+    .filter(id => nodePos[`${to.floor}:${id}`]);
+  let nodePath = null, chosenEntry = to.entry, bestCost = Infinity;
+  for (const entry of entryCandidates) {
+    const candidate = astar(startNodeId, `${to.floor}:${entry}`);
+    if (!candidate) continue;
+    let cost = 0;
+    for (let i = 1; i < candidate.length; i++) cost += nodePos[candidate[i - 1]].distanceTo(nodePos[candidate[i]]);
+    if (cost < bestCost) { bestCost = cost; nodePath = candidate; chosenEntry = entry; }
+  }
   if (!nodePath) return null;
 
   const legs = [];
@@ -864,8 +904,11 @@ function buildRouteLegs(startPos, startFloor, toId) {
     }
     prevKey = key;
   }
-  // みんなの到着地点から補正された実測入口（_navPos）があればそちらをゴールにする
-  cur.points.push((to._navPos ?? to._pos).clone());
+  // 実測入口がある建物は建物中心へ入り込まず、選択した入口ノードをゴールにする。
+  // 実測入口が無い場合だけ、みんなの到着地点補正または従来の施設位置を使う。
+  const measuredEntryPos = Array.isArray(to.surveyEntrances) && to.surveyEntrances.length
+    ? nodePos[`${to.floor}:${chosenEntry}`] : null;
+  cur.points.push((measuredEntryPos ?? to._navPos ?? to._pos).clone());
   legs.push(cur);
 
   // 各レッグ内の連続する近接点を除去
@@ -1569,7 +1612,10 @@ function focusShop(shop) {
 // ------------------------------------------------------------
 // GPS現在地（実際の位置情報でアバターとナビが動く）
 // ------------------------------------------------------------
-const geoState = { watchId: null, ok: false, world: null, course: null, lat: null, lng: null, accuracy: null };
+const geoState = {
+  watchId: null, ok: false, world: null, course: null,
+  lat: null, lng: null, accuracy: null, timestamp: null,
+};
 
 // 実方位（真北から時計回り）→ ワールドのyaw角。GEO.rotationDegを考慮する
 function courseToWorldYaw(course) {
@@ -1587,7 +1633,7 @@ function courseToWorldYaw(course) {
 //   スナップするのは表示だけで、経路探索・逸脱判定のしきい値・歩行学習・
 //   位置共有はすべて生のGPS位置のまま動く。
 // ------------------------------------------------------------
-const SNAP_DIST = 4; // 道からこれ以内（≈16m）なら道の上に表示。離れたら生の位置
+const SNAP_DIST = 8 / METER_PER_UNIT; // 最大8mだけ通路へ吸着。大きな地図ズレを隠さない
 function snapToPath(pos) {
   let bx = 0, bz = 0, bd = Infinity;
   for (const a of Object.keys(adj)) {
@@ -1625,6 +1671,7 @@ function startGeolocation({ silentError = false } = {}) {
     geoState.lat = latitude;
     geoState.lng = longitude;
     geoState.accuracy = accuracy;
+    geoState.timestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();
     const { x, z } = gpsToWorld(latitude, longitude);
     // マップ範囲＋余白の内側にいるときだけ実位置へ追従する（それ以外は入口基準）
     geoState.ok = Math.abs(x) < MAP_W / 2 + 15 && Math.abs(z) < MAP_D / 2 + 15;
@@ -1649,8 +1696,8 @@ function startGeolocation({ silentError = false } = {}) {
 // ------------------------------------------------------------
 // ナビモード（GPS追従。追従(三人称)/俯瞰をワンタップ切替、逸脱時は自動リルート）
 // ------------------------------------------------------------
-const NAV_OFFROUTE_DIST = 5;  // 経路逸脱とみなす距離（≈20m: 屋外GPS誤差を考慮）
-const NAV_ARRIVE_DIST = 4;    // 到着とみなす距離（≈16m）
+const NAV_OFFROUTE_DIST = 12 / METER_PER_UNIT; // 経路から12mで再探索
+const NAV_ARRIVE_DIST = 10 / METER_PER_UNIT;   // 目的地から10mで到着
 // navMode: { view, heading, headingOffset, zoom, samples, goal, len, rerouteAt }（宣言はフロア状態節）
 
 // ナビ中の見回し（1本指ドラッグ=回転 / ピンチ=ズーム / ホイール=ズーム）
@@ -2320,7 +2367,7 @@ bootWalkLearn(false);
 
 // 現地測量モード（?survey）— 通常利用者のペイロードに影響しないよう動的読み込み
 if (new URLSearchParams(location.search).has('survey')) {
-  import('./survey.js')
+  import('./survey.js?v=20260814b')
     .then(m => m.initSurvey({ scene, geoState, startGeolocation, toast }))
     .catch(() => toast('測量モードを読み込めませんでした'));
 }

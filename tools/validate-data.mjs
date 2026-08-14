@@ -12,6 +12,8 @@ import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { FLOORS, FLOOR_ORDER, SHOPS, PLACES, CATEGORIES } = await import(join(root, 'js/data.js'));
+const { SURVEY } = await import(join(root, 'js/survey-data.js'));
+const { surveyProgress } = await import(join(root, 'js/survey-planner.js'));
 
 let errors = 0;
 const fail = (msg) => { console.error('✗ ' + msg); errors++; };
@@ -54,6 +56,59 @@ for (const need of ['gate-main', 'gate-east', 'bus', 'plaza']) {
   if (!PLACES.find(p => p.id === need)) fail(`required place missing: ${need}`);
 }
 
-console.log(`buildings: ${SHOPS.length}, nodes: ${Object.keys(nodes).length}, edges: ${fl.navEdges.length}, floors: ${FLOOR_ORDER.length}`);
+// 4. 現地名称監査・生GPSログの形式
+if (!Number.isInteger(SURVEY.version) || SURVEY.version < 3) fail('survey version must be 3 or newer');
+if (SURVEY.geo != null) {
+  if (!Number.isFinite(SURVEY.geo.lat0) || SURVEY.geo.lat0 < 34.9 || SURVEY.geo.lat0 > 35.1) fail('survey geo.lat0 invalid');
+  if (!Number.isFinite(SURVEY.geo.lng0) || SURVEY.geo.lng0 < 135.8 || SURVEY.geo.lng0 > 136.1) fail('survey geo.lng0 invalid');
+  if (!Number.isFinite(SURVEY.geo.rotationDeg) || Math.abs(SURVEY.geo.rotationDeg) > 180) fail('survey geo.rotationDeg invalid');
+  if (!Number.isFinite(SURVEY.geo.meterPerUnit) || SURVEY.geo.meterPerUnit < 1 || SURVEY.geo.meterPerUnit > 20) fail('survey geo.meterPerUnit invalid');
+}
+const knownShopIds = new Set(SHOPS.map(s => s.id));
+for (const [id, audit] of Object.entries(SURVEY.audits ?? {})) {
+  if (!knownShopIds.has(id)) fail(`audit shop unknown: ${id}`);
+  if (!['ok', 'corrected', 'unconfirmed', 'not-found'].includes(audit?.status)) fail(`audit status invalid: ${id}`);
+  if (audit?.status === 'corrected' && !audit.observedName?.trim()) fail(`corrected audit missing observedName: ${id}`);
+  if (typeof audit?.observedName === 'string' && audit.observedName.length > 60) fail(`audit name too long: ${id}`);
+  if (typeof audit?.note === 'string' && audit.note.length > 240) fail(`audit note too long: ${id}`);
+}
+let rawSamples = 0;
+for (const track of SURVEY.tracks ?? []) {
+  if (!track || !Array.isArray(track.samples)) { fail('track samples invalid'); continue; }
+  if (track.kind && !['path', 'free-path', 'building-perimeter'].includes(track.kind)) fail(`track kind invalid: ${track.id ?? '?'}`);
+  if (track.kind === 'path' && (!track.targetEdge || !['forward', 'reverse'].includes(track.direction))) {
+    fail(`planned path metadata invalid: ${track.id ?? '?'}`);
+  }
+  for (const p of track.samples) {
+    rawSamples++;
+    if (!Number.isFinite(p?.lat) || p.lat < 34.9 || p.lat > 35.1 ||
+        !Number.isFinite(p?.lng) || p.lng < 135.8 || p.lng > 136.1) fail(`track coordinate invalid: ${track.id ?? '?'}`);
+    if (!Number.isFinite(p?.accuracy) || p.accuracy < 0 || p.accuracy > 1000) fail(`track accuracy invalid: ${track.id ?? '?'}`);
+    if (!Number.isFinite(p?.timestamp)) fail(`track timestamp invalid: ${track.id ?? '?'}`);
+  }
+}
+
+for (const [id, rec] of Object.entries(SURVEY.buildings ?? {})) {
+  if (rec?.entrance && (!Number.isFinite(rec.entrance.lat) || !Number.isFinite(rec.entrance.lng))) fail(`building entrance invalid: ${id}`);
+  if (rec?.entrances) {
+    if (!Array.isArray(rec.entrances) || rec.entrances.length > 12) fail(`building entrances invalid: ${id}`);
+    for (const entrance of rec.entrances) {
+      if (!Number.isFinite(entrance?.lat) || !Number.isFinite(entrance?.lng)) fail(`building entrance coordinate invalid: ${id}`);
+    }
+  }
+  if (rec?.footprint) {
+    if (!Array.isArray(rec.footprint) || rec.footprint.length < 4) fail(`building footprint too short: ${id}`);
+    for (const p of rec.footprint) {
+      if (!Number.isFinite(p?.lat) || !Number.isFinite(p?.lng)) fail(`building footprint coordinate invalid: ${id}`);
+    }
+    if (rec.footprintQuality?.passed !== true) fail(`building footprint lacks passed quality: ${id}`);
+  }
+}
+const progress = surveyProgress(SURVEY);
+if (SURVEY.replaceGraph && !progress.productionReady) {
+  fail('replaceGraph requires every survey quality gate to pass');
+}
+
+console.log(`buildings: ${SHOPS.length}, nodes: ${Object.keys(nodes).length}, edges: ${fl.navEdges.length}, floors: ${FLOOR_ORDER.length}, audits: ${Object.keys(SURVEY.audits ?? {}).length}, raw samples: ${rawSamples}, survey score: ${progress.score}%`);
 console.log(errors === 0 ? '✓ ALL CHECKS PASSED' : `✗ ${errors} error(s)`);
 process.exit(errors ? 1 : 0);

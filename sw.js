@@ -4,21 +4,22 @@
 //   2回目以降はネットワークなしでも動作する。
 //   （大人数の同時アクセス時もサーバー負荷は初回取得分だけになる）
 // ============================================================
-const CACHE_VERSION = 'bkc-map-v23-crowd-spots';
+const CACHE_VERSION = 'bkc-map-v27-adaptive-survey-sync';
 
 const PRECACHE = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/style.css?v=20260728k',
-  './js/app.js?v=20260730b',
+  './js/app.js?v=20260814b',
   './js/walk-learn.js?v=20260730b',
   './js/data.js',
   './js/survey-data.js',
   './js/firebase-config.js',
   './js/live.js?v=20260729b',
   './js/boot.js?v=20260728k',
-  './js/survey.js',
+  './js/survey.js?v=20260814b',
+  './js/survey-planner.js',
   './js/ar.js',
   './vendor/three.module.js',
   './vendor/OrbitControls.js',
@@ -46,6 +47,11 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // 外部リクエストは扱わない（そもそも発生しない設計）
+  // PCバックアップは機密性と鮮度を優先し、Service Workerへ保存しない。
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(fetch(req, { cache: 'no-store' }));
+    return;
+  }
 
   if (req.mode === 'navigate') {
     // HTMLはネットワーク優先（更新を確実に配る）。オフライン時はキャッシュへフォールバック
