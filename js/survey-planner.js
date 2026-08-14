@@ -297,7 +297,9 @@ function buildCandidates(state) {
 
 function phaseOf(state, candidates) {
   const controls = candidates.filter(t => t.kind === 'control').length;
-  if (controls) return { id: 'anchors', label: '基準点を確立中', allowed: new Set(['control']) };
+  // 基準点を優先しつつ、利用者が既に未確認建物の前にいる場合はその場の情報を先に採る。
+  // 遠い基準点へ移動させて現在地の貴重なGPS機会を捨てない。
+  if (controls) return { id: 'anchors', label: '近くの場所から確認', allowed: new Set(['control', 'building']) };
   const pathRemaining = candidates.filter(t => t.kind === 'path').length;
   const buildingRemaining = candidates.filter(t => t.kind === 'building').length;
   if (pathRemaining > fl.navEdges.length * 0.7) return { id: 'backbone', label: '主要通路を測定中', allowed: new Set(['path', 'building']) };

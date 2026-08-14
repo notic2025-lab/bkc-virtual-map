@@ -2367,7 +2367,7 @@ bootWalkLearn(false);
 
 // 現地測量モード（?survey）— 通常利用者のペイロードに影響しないよう動的読み込み
 if (new URLSearchParams(location.search).has('survey')) {
-  import('./survey.js?v=20260814c')
+  import('./survey.js?v=20260814d')
     .then(m => m.initSurvey({ scene, camera, mapControls: controls, geoState, startGeolocation, toast }))
     .catch(() => toast('測量モードを読み込めませんでした'));
 }

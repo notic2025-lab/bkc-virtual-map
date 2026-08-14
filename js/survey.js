@@ -12,7 +12,7 @@ import { SURVEY as BASE_SURVEY } from './survey-data.js';
 import {
   SURVEY_QUALITY, createSurveyPlan, surveyProgress, evaluateTrack, perimeterFromTrack,
   buildProductionGraph, deriveGeoReference,
-} from './survey-planner.js?v=20260814c';
+} from './survey-planner.js?v=20260814d';
 
 const LS_KEY = 'bkc-survey-v1'; // キーは維持して既存の現地データを自動移行する
 const ACCURACY_LIMIT_M = 5;   // 完成地図へ採用できるGPS精度上限（95%半径）
@@ -596,6 +596,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     #sv-task-start:disabled { background:#475569; color:#cbd5e1; cursor:not-allowed; }
     #sv-safety { color:#fca5a5; font-size:10px; line-height:1.4; margin:6px 0 0; }
     #sv-secondary-actions { display:flex; gap:6px; margin-top:6px; }
+    #sv-quick-place { min-height:52px; margin-top:7px; border-color:#f6c76a; background:rgba(246,199,106,.16); color:#fff3cf; font-size:15px; }
     #sv-advanced { margin-top:8px; border-top:1px solid rgba(255,255,255,.1); padding-top:7px; }
     #sv-advanced summary { cursor:pointer; color:#93b9c7; font-size:11px; font-weight:800; padding:4px; }
     #sv-advanced[open] summary { margin-bottom:7px; }
@@ -617,6 +618,8 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     #survey-picker.hidden, #survey-audit-picker.hidden { display: none; }
     #survey-picker h3, #survey-audit-picker h3 { color: #eafcff; font-size: 15px; margin-bottom: 10px; }
     #sv-picker-list, #sv-audit-list { overflow-y: auto; flex: 1; display: grid; gap: 6px; align-content: start; }
+    #sv-picker-help { color:#b9dce8; font-size:12px; line-height:1.5; margin-bottom:8px; }
+    #sv-picker-search { min-height:48px; border-radius:12px; padding:0 13px; margin-bottom:9px; border:1px solid rgba(56,240,255,.4); background:#071722; color:#fff; font-size:16px; }
     .sv-poi {
       display: flex; justify-content: space-between; align-items: center; gap: 10px;
       padding: 12px 14px; border-radius: 12px; cursor: pointer; text-align: left;
@@ -674,11 +677,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
         <p id="sv-task-instruction"></p>
         <div id="sv-simple-steps"><span>① 開始点へ</span><span>② 道を歩く</span><span>③ ゴールで停止</span></div>
         <button id="sv-task-start" class="sv-btn" type="button">GPSを待っています</button>
-        <div id="sv-secondary-actions">
-          <button id="sv-task-speak" class="sv-btn sv-small" type="button">🔊 読み上げ</button>
-          <button id="sv-plan-refresh" class="sv-btn" type="button">現在地から引き直す</button>
-          <button id="sv-task-skip" class="sv-btn sv-small" type="button">別の場所</button>
-        </div>
+        <button id="sv-quick-place" class="sv-btn" type="button">📍 今いる建物を記録する</button>
         <p id="sv-safety">安全優先：歩きながら画面を注視せず、立入禁止区域や車道には入らないでください。</p>
       </div>
     </section>
@@ -689,6 +688,11 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
         <select id="sv-budget" aria-label="調査時間">
           <option value="15">15分</option><option value="30" selected>30分</option><option value="60">60分</option>
         </select>
+      </div>
+      <div id="sv-secondary-actions">
+        <button id="sv-task-speak" class="sv-btn sv-small" type="button">🔊 読上</button>
+        <button id="sv-plan-refresh" class="sv-btn" type="button">現在地から引き直す</button>
+        <button id="sv-task-skip" class="sv-btn sv-small" type="button">別の場所</button>
       </div>
       <div class="sv-stats" id="sv-stats"></div>
       <p id="sv-task-reason"></p>
@@ -715,7 +719,9 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
   picker.id = 'survey-picker';
   picker.className = 'hidden';
   picker.innerHTML = `
-    <h3>どの施設の入口ですか？（近い順）</h3>
+    <h3>今いる建物を1つタップ</h3>
+    <p id="sv-picker-help">屋外の入口前で選んでください。選んだ後は15秒間、動かずに待つだけです。</p>
+    <input id="sv-picker-search" type="search" inputmode="search" placeholder="建物名を検索（例：トリシア）">
     <div id="sv-picker-list"></div>
     <button id="sv-picker-close" class="sv-btn" type="button">閉じる</button>`;
   uiRoot.appendChild(picker);
@@ -867,10 +873,24 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
   panel.querySelector('#sv-clear').addEventListener('click', clearAll);
   panel.querySelector('#sv-export').addEventListener('click', exportData);
   panel.querySelector('#sv-restore').addEventListener('click', restoreFromPc);
+  panel.querySelector('#sv-quick-place').addEventListener('click', openPicker);
   panel.querySelector('#sv-poi').addEventListener('click', openPicker);
   panel.querySelector('#sv-audit').addEventListener('click', openAuditPicker);
   picker.querySelector('#sv-picker-close').addEventListener('click', () => picker.classList.add('hidden'));
   auditPicker.querySelector('#sv-audit-close').addEventListener('click', () => auditPicker.classList.add('hidden'));
+
+  async function quickRecordBuilding(poi) {
+    if (!here()) { toast('GPSを取得中です。空の見える場所で少し待ってください'); return; }
+    const accepted = confirm(
+      `今、「${poi.name}」の屋外入口前にいますか？\n\nOKを押すと15秒測定します。その場から動かないでください。`
+    );
+    if (!accepted) return;
+    const audit = state.audits[poi.id];
+    if (!audit || !['ok', 'corrected'].includes(audit.status)) {
+      saveAudit(poi, { status: 'ok', observedName: '', note: 'かんたん記録で現地確認' });
+    }
+    await recordPoi(poi, false);
+  }
 
   function openPicker() {
     const p = here();
@@ -883,20 +903,34 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
       })
       .sort((a, b) => a.d - b.d);
     const list = picker.querySelector('#sv-picker-list');
-    list.innerHTML = '';
-    for (const c of cands) {
-      const recorded = (c.isPlace ? state.places : state.buildings)[c.poi.id];
-      const btn = document.createElement('button');
-      btn.className = 'sv-poi';
-      btn.type = 'button';
-      btn.innerHTML = `<span>${c.poi.name}</span><small class="${recorded ? 'sv-done' : ''}">${recorded ? '✓済' : `約${Math.round(c.d)}m`}</small>`;
-      btn.addEventListener('click', () => {
-        picker.classList.add('hidden');
-        recordPoi(c.poi, c.isPlace);
-      });
-      list.appendChild(btn);
-    }
+    const search = picker.querySelector('#sv-picker-search');
+    search.value = '';
+    const render = () => {
+      const query = search.value.trim().toLocaleLowerCase('ja');
+      list.replaceChildren();
+      for (const c of cands.filter(x => !query || `${x.poi.name} ${x.poi.en ?? ''}`.toLocaleLowerCase('ja').includes(query))) {
+        const recorded = (c.isPlace ? state.places : state.buildings)[c.poi.id];
+        const btn = document.createElement('button');
+        btn.className = 'sv-poi';
+        btn.type = 'button';
+        const label = document.createElement('span');
+        label.textContent = c.poi.name;
+        const meta = document.createElement('small');
+        meta.className = recorded ? 'sv-done' : '';
+        meta.textContent = recorded ? '✓ 記録済み' : `ここを記録（約${Math.round(c.d)}m）`;
+        btn.append(label, meta);
+        btn.addEventListener('click', async () => {
+          picker.classList.add('hidden');
+          if (c.isPlace) await recordPoi(c.poi, true);
+          else await quickRecordBuilding(c.poi);
+        });
+        list.appendChild(btn);
+      }
+    };
+    search.oninput = render;
+    render();
     picker.classList.remove('hidden');
+    setTimeout(() => search.focus(), 80);
   }
 
   function openAuditPicker() {
@@ -1136,7 +1170,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     }
     if (task.kind === 'building') {
       const shop = SURVEY_SHOPS.find(s => s.id === task.targetId);
-      if (shop) openAuditForPoi(shop);
+      if (shop) await quickRecordBuilding(shop);
       return;
     }
     if (task.kind === 'path') {
