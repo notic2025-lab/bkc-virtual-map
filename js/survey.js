@@ -12,7 +12,7 @@ import { SURVEY as BASE_SURVEY } from './survey-data.js';
 import {
   SURVEY_QUALITY, createSurveyPlan, surveyProgress, evaluateTrack, perimeterFromTrack,
   buildProductionGraph, deriveGeoReference,
-} from './survey-planner.js?v=20260814d';
+} from './survey-planner.js?v=20260814e';
 
 const LS_KEY = 'bkc-survey-v1'; // キーは維持して既存の現地データを自動移行する
 const ACCURACY_LIMIT_M = 5;   // 完成地図へ採用できるGPS精度上限（95%半径）
@@ -43,17 +43,18 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     audits: structuredClone(base.audits ?? {}),
     tracks: structuredClone(base.tracks ?? []),
     trackSeq: (base.tracks ?? []).length,
-    planner: structuredClone(base.planner ?? { skipped: {}, history: [], budgetMin: 30 }),
+    planner: structuredClone(base.planner ?? { skipped: {}, history: [], budgetMin: 30, stage: 'buildings' }),
     replaceGraph: !!base.replaceGraph,
   };
   state.points ??= {};  // 旧バージョンで保存したデータとの互換
   state.audits ??= {};
   state.tracks ??= [];
   state.trackSeq ??= state.tracks.length;
-  state.planner ??= { skipped: {}, history: [], budgetMin: 30 };
+  state.planner ??= { skipped: {}, history: [], budgetMin: 30, stage: 'buildings' };
   state.planner.skipped ??= {};
   state.planner.history ??= [];
   state.planner.budgetMin ??= 30;
+  state.planner.stage ??= 'buildings';
   state.pseq ??= 0;
   // v1では建物入口が pin として保存されていた。建物本体の位置と混同しないよう移行する。
   for (const rec of Object.values(state.buildings ?? {})) {
@@ -302,7 +303,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     state.seq = 1; state.pseq = 0; state.trackSeq = 0;
     state.nodes = {}; state.edges = []; state.buildings = {}; state.places = {}; state.points = {};
     state.audits = {}; state.tracks = [];
-    state.planner = { skipped: {}, history: [], budgetMin: 30 };
+    state.planner = { skipped: {}, history: [], budgetMin: 30, stage: 'buildings' };
     activeTrack = null; lastRawTimestamp = null;
     actions.length = 0; lastNodeId = null;
     save(); redraw(); updateHud();
@@ -677,7 +678,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
         <p id="sv-task-instruction"></p>
         <div id="sv-simple-steps"><span>① 開始点へ</span><span>② 道を歩く</span><span>③ ゴールで停止</span></div>
         <button id="sv-task-start" class="sv-btn" type="button">GPSを待っています</button>
-        <button id="sv-quick-place" class="sv-btn" type="button">📍 今いる建物を記録する</button>
+        <button id="sv-quick-place" class="sv-btn" type="button">📍 今いる建物の位置を測る</button>
         <p id="sv-safety">安全優先：歩きながら画面を注視せず、立入禁止区域や車道には入らないでください。</p>
       </div>
     </section>
@@ -695,6 +696,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
         <button id="sv-task-skip" class="sv-btn sv-small" type="button">別の場所</button>
       </div>
       <div class="sv-stats" id="sv-stats"></div>
+      <button id="sv-stage-routes" class="sv-btn" type="button">建物位置の完了後に通路調査へ</button>
       <p id="sv-task-reason"></p>
       <div class="sv-row">
         <button id="sv-log" class="sv-btn" type="button">手動記録</button>
@@ -720,7 +722,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
   picker.className = 'hidden';
   picker.innerHTML = `
     <h3>今いる建物を1つタップ</h3>
-    <p id="sv-picker-help">屋外の入口前で選んでください。選んだ後は15秒間、動かずに待つだけです。</p>
+    <p id="sv-picker-help">建物内ではなく、屋外の正面入口中央で選んでください。選んだ後は15秒間動かずに待つだけです。</p>
     <input id="sv-picker-search" type="search" inputmode="search" placeholder="建物名を検索（例：トリシア）">
     <div id="sv-picker-list"></div>
     <button id="sv-picker-close" class="sv-btn" type="button">閉じる</button>`;
@@ -834,6 +836,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     taskReason: panel.querySelector('#sv-task-reason'),
     taskInstruction: panel.querySelector('#sv-task-instruction'),
     taskStart: panel.querySelector('#sv-task-start'),
+    stageRoutes: panel.querySelector('#sv-stage-routes'),
   };
   ui.budget.value = String(state.planner.budgetMin);
   ui.replace.checked = !!state.replaceGraph;
@@ -878,11 +881,21 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
   panel.querySelector('#sv-audit').addEventListener('click', openAuditPicker);
   picker.querySelector('#sv-picker-close').addEventListener('click', () => picker.classList.add('hidden'));
   auditPicker.querySelector('#sv-audit-close').addEventListener('click', () => auditPicker.classList.add('hidden'));
+  ui.stageRoutes.addEventListener('click', () => {
+    const progress = surveyProgress(state);
+    if (progress.namesDone !== progress.namesTotal || progress.entrancesDone !== progress.entrancesTotal) {
+      toast(`先に全建物の位置を測ってください（${progress.entrancesDone}/${progress.entrancesTotal}）`, 5200);
+      return;
+    }
+    if (!confirm('建物位置の測定は完了しています。通路・外周調査へ進みますか？')) return;
+    state.planner.stage = 'routes';
+    save(); refreshPlanner(true);
+  });
 
   async function quickRecordBuilding(poi) {
     if (!here()) { toast('GPSを取得中です。空の見える場所で少し待ってください'); return; }
     const accepted = confirm(
-      `今、「${poi.name}」の屋外入口前にいますか？\n\nOKを押すと15秒測定します。その場から動かないでください。`
+      `今、「${poi.name}」の屋外正面入口中央にいますか？\n\n建物内では測らないでください。OKを押すと15秒測定します。`
     );
     if (!accepted) return;
     const audit = state.audits[poi.id];
@@ -896,7 +909,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     const p = here();
     if (!p) { toast('GPSを取得中です。空の見える場所で少し待ってください'); return; }
     const w = gpsToWorld(p.lat, p.lng);
-    const cands = [...SURVEY_SHOPS.map(s => ({ poi: s, isPlace: false })), ...PLACES.map(s => ({ poi: s, isPlace: true }))]
+    const cands = SURVEY_SHOPS.map(s => ({ poi: s, isPlace: false }))
       .map(c => {
         const pw = toWorld(c.poi.pin.left, c.poi.pin.top);
         return { ...c, d: Math.hypot(pw.x - w.x, pw.z - w.z) * GEO.meterPerUnit };
@@ -985,20 +998,37 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     lastPlannerPosition = plannedHere ? gpsToWorld(plannedHere.lat, plannedHere.lng) : null;
     plannerRefreshAt = Date.now();
     const p = currentPlan.progress;
-    ui.phase.textContent = p.productionReady ? '公開品質基準を達成' : currentPlan.phase.label;
-    ui.score.textContent = `${p.score}%`;
-    ui.progressFill.style.width = `${p.score}%`;
+    const buildingStage = state.planner.stage !== 'routes';
+    const buildingPercent = Math.round(100 * p.entrancesDone / Math.max(1, p.entrancesTotal));
+    ui.phase.textContent = buildingStage
+      ? (p.entrancesDone === p.entrancesTotal ? '建物位置の測定完了' : '建物位置だけを測定中')
+      : (p.productionReady ? '公開品質基準を達成' : currentPlan.phase.label);
+    ui.score.textContent = buildingStage ? `${p.entrancesDone}/${p.entrancesTotal}棟` : `${p.score}%`;
+    ui.progressFill.style.width = `${buildingStage ? buildingPercent : p.score}%`;
+    ui.stageRoutes.disabled = p.namesDone !== p.namesTotal || p.entrancesDone !== p.entrancesTotal;
+    ui.stageRoutes.textContent = ui.stageRoutes.disabled
+      ? `建物位置 ${p.entrancesDone}/${p.entrancesTotal} — 通路はまだ測らない`
+      : '建物位置完了 — 通路・外周調査へ進む';
     ui.progressText.textContent =
       `基準点 ${p.controlsDone}/${p.controlsTotal} ・ 通路方向 ${p.edgeDirectionsDone}/${p.edgeDirectionsTotal}` +
       ` ・ 名称 ${p.namesDone}/${p.namesTotal} ・ 入口 ${p.entrancesDone}/${p.entrancesTotal}` +
       ` ・ 外周 ${p.footprintsDone}/${p.footprintsTotal} ・ 良好GPS ${Math.round(p.gpsGoodRatio * 100)}%`;
     const task = currentPlan.tasks[currentTaskIndex];
     drawPlannerTask(task);
-    ui.taskCard.classList.toggle('hidden', !task);
+    ui.taskCard.classList.toggle('hidden', !task && !buildingStage);
     if (!task) {
-      if (!p.productionReady) ui.progressText.textContent += ' ・ 現在条件で候補なし（後回し解除または再測定が必要）';
+      if (buildingStage && p.entrancesDone === p.entrancesTotal) {
+        ui.actionTitle.textContent = '建物位置の測定が完了しました';
+        ui.distance.textContent = `${p.entrancesDone}/${p.entrancesTotal}棟 完了`;
+        ui.taskTitle.textContent = '通路調査は自動では始まりません';
+        ui.taskInstruction.textContent = '今日はここで終了できます。データは端末に保存済みです。';
+        ui.taskStart.hidden = true;
+      } else if (!p.productionReady) {
+        ui.progressText.textContent += ' ・ 候補なし（後回しにした建物があります）';
+      }
       return;
     }
+    ui.taskStart.hidden = false;
     ui.taskCount.textContent = `いまやること ・ 約${task.estimatedMin}分`;
     ui.taskTitle.textContent = task.kind === 'path' ? `測定区間：${task.title}` : task.title;
     ui.taskReason.textContent = `理由：${task.reason}`;
@@ -1011,6 +1041,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
       child.geometry?.dispose(); child.material?.dispose();
     }
     if (!task?.startWorld) return;
+    if (state.planner.stage !== 'routes' && task.kind === 'building') return;
     const v3 = p => new THREE.Vector3(p.x, 1.05, p.z);
     const addRoute = (worldPoints, color, radius, opacity) => {
       const points = worldPoints?.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.z)).map(v3) ?? [];
@@ -1091,9 +1122,11 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
       : task.kind === 'control'
         ? ['① 測定点へ', '② 15秒停止', '③ 自動保存']
         : task.kind === 'building'
-          ? ['① 建物へ', '② 名称確認', '③ 入口15秒']
+          ? ['① 建物選択', '② 屋外入口', '③ 15秒停止']
           : ['① 開始点へ', '② 外周一周', '③ 戻って停止'];
     steps.forEach((s, i) => { s.textContent = stepLabels[i]; });
+    const routeKey = panel.querySelector('#sv-route-key');
+    routeKey.hidden = state.planner.stage !== 'routes' && task.kind === 'building';
     const measureKey = panel.querySelector('#sv-route-key .measure');
     measureKey.hidden = task.kind !== 'path';
     steps.forEach(s => s.classList.remove('active'));
@@ -1104,7 +1137,9 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
       steps[0]?.classList.add('active');
       ui.actionTitle.textContent = 'GPSを取得しています';
       ui.distance.textContent = '空が見える場所で少し待ってください';
-      ui.taskInstruction.textContent = '位置情報を許可すると、歩く道を地図上に表示します。';
+      ui.taskInstruction.textContent = state.planner.stage !== 'routes'
+        ? '位置情報を許可すると、近くの未測定建物を表示します。'
+        : '位置情報を許可すると、歩く道を地図上に表示します。';
       ui.taskStart.textContent = 'GPSを待っています';
       return;
     }
@@ -1137,9 +1172,10 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
       ui.taskInstruction.textContent = '緑の丸の近くに着いたら立ち止まり、ボタンを押して15秒間動かないでください。';
       ui.taskStart.textContent = 'ここで15秒測定する';
     } else if (task.kind === 'building') {
-      ui.actionTitle.textContent = close ? '① 建物の表札と入口を確認' : '① 青い線でこの建物へ移動';
-      ui.taskInstruction.textContent = '現地の表札が見える入口前でボタンを押してください。';
-      ui.taskStart.textContent = '建物名と入口を記録する';
+      ui.actionTitle.textContent = `「${task.title.replace('の位置を測定', '')}」の位置を測る`;
+      ui.distance.textContent = `現在のGPS精度 ±${Math.round(hp.accuracy ?? 0)}m`;
+      ui.taskInstruction.textContent = '建物内ではなく、屋外の正面入口中央に立ってボタンを押し、15秒動かないでください。';
+      ui.taskStart.textContent = 'この建物の位置を15秒測る';
     } else {
       ui.actionTitle.textContent = close ? '① 外周測定の開始地点に到着' : '① 青い線で建物へ移動';
       ui.taskInstruction.textContent = '開始後、外壁に沿って一周し、この緑の丸へ戻ります。';
