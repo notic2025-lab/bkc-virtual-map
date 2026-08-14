@@ -12,7 +12,7 @@ import { SURVEY as BASE_SURVEY } from './survey-data.js';
 import {
   SURVEY_QUALITY, createSurveyPlan, surveyProgress, evaluateTrack, perimeterFromTrack,
   buildProductionGraph, deriveGeoReference,
-} from './survey-planner.js?v=20260814f';
+} from './survey-planner.js?v=20260814g';
 
 const LS_KEY = 'bkc-survey-v1'; // キーは維持して既存の現地データを自動移行する
 const ACCURACY_LIMIT_M = 5;   // 完成地図へ採用できるGPS精度上限（95%半径）
@@ -597,6 +597,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     #sv-task-start { min-height:58px; font-size:16px; background:#22c55e; color:#062b15; border:0; }
     #sv-task-start.stop { background:#ef4444; color:#fff; }
     #sv-task-start:disabled { background:#475569; color:#cbd5e1; cursor:not-allowed; }
+    #sv-name-fix { min-height:32px; margin:0 0 6px; border:0; background:transparent; color:#93c5fd; font-size:11px; text-align:left; text-decoration:underline; }
     #sv-safety { color:#fca5a5; font-size:10px; line-height:1.4; margin:6px 0 0; }
     #sv-secondary-actions { display:flex; gap:6px; margin-top:6px; }
     #sv-quick-place { min-height:52px; margin-top:7px; border-color:#f6c76a; background:rgba(246,199,106,.16); color:#fff3cf; font-size:15px; }
@@ -698,6 +699,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
         <div id="sv-route-key"><span class="move">青：開始点まで</span><span class="measure">ピンク：測定する道</span></div>
         <strong id="sv-task-title"></strong>
         <p id="sv-task-instruction"></p>
+        <button id="sv-name-fix" class="sv-btn" type="button" hidden>表示名が違う場合だけ修正</button>
         <div id="sv-simple-steps"><span>① 開始点へ</span><span>② 道を歩く</span><span>③ ゴールで停止</span></div>
         <button id="sv-task-start" class="sv-btn" type="button">地図上の建物をタップ</button>
         <button id="sv-quick-place" class="sv-btn" type="button">📍 今いる建物の位置を測る</button>
@@ -857,6 +859,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     taskTitle: panel.querySelector('#sv-task-title'),
     taskReason: panel.querySelector('#sv-task-reason'),
     taskInstruction: panel.querySelector('#sv-task-instruction'),
+    nameFix: panel.querySelector('#sv-name-fix'),
     taskStart: panel.querySelector('#sv-task-start'),
     stageRoutes: panel.querySelector('#sv-stage-routes'),
   };
@@ -887,6 +890,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     ui.taskStart.hidden = false;
     ui.taskStart.classList.remove('stop');
     if (stationaryMeasurement) {
+      ui.nameFix.hidden = true;
       ui.actionTitle.textContent = `「${selectedMapShop?.name ?? '建物'}」の入口を測定中`;
       ui.distance.textContent = '15秒間、そのまま動かないでください';
       ui.taskInstruction.textContent = 'スマホを持ったまま屋外の入口中央で静止してください。';
@@ -898,6 +902,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
     const accuracy = Number.isFinite(hp?.accuracy) ? hp.accuracy : null;
     const gpsReady = accuracy != null && accuracy <= ACCURACY_LIMIT_M;
     if (!selectedMapShop) {
+      ui.nameFix.hidden = true;
       ui.actionTitle.textContent = '① 地図上の建物をタップ';
       ui.distance.textContent = `建物位置 ${progress.entrancesDone}/${progress.entrancesTotal}棟`;
       ui.taskInstruction.textContent = '測りたい建物本体か、その名前ラベルを地図上で直接タップしてください。';
@@ -906,6 +911,7 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
       return;
     }
     const alreadyRecorded = !!state.buildings[selectedMapShop.id];
+    ui.nameFix.hidden = false;
     ui.actionTitle.textContent = `選択中：${selectedMapShop.name}`;
     ui.distance.textContent = accuracy == null ? 'GPSを取得中' : `現在のGPS精度 ±${Math.round(accuracy)}m`;
     if (!gpsReady) {
@@ -924,6 +930,9 @@ export function initSurvey({ scene, camera, mapControls, geoState, startGeolocat
   }
   syncSurveyStage();
   window.addEventListener('bkc-survey-select-shop', event => selectMapShop(event.detail?.shopId));
+  ui.nameFix.addEventListener('click', () => {
+    if (selectedMapShop) openAuditForPoi(selectedMapShop);
+  });
   ui.replace.addEventListener('change', () => {
     if (ui.replace.checked) {
       const p = surveyProgress(state);
