@@ -271,9 +271,9 @@ function buildCandidates(state) {
     if (!auditDone || !entranceDone) {
       tasks.push({
         id: `building:${shop.id}`, kind: 'building', targetId: shop.id,
-        title: `${shop.name}の名称と入口を確認`,
-        instruction: `現地の表札で正式名称を確認し、入口前で15秒停止して測定してください。`,
-        reason: !auditDone && !entranceDone ? '名称とナビ到着点が未確認のため' : (!auditDone ? '正式名称が未確認のため' : '入口の測位品質が不足しているため'),
+        title: `${shop.name}の位置を測定`,
+        instruction: `屋外の正面入口中央で15秒停止し、建物の基準位置を測定してください。建物内では測らないでください。`,
+        reason: !auditDone && !entranceDone ? '建物名と位置基準点が未確認のため' : (!auditDone ? '正式名称が未確認のため' : '位置基準点のGPS品質が不足しているため'),
         gain: (!auditDone ? 17 : 0) + (!entranceDone ? 24 : 0),
         serviceMin: 2.0, startWorld: pos, endWorld: pos,
       });
@@ -296,12 +296,19 @@ function buildCandidates(state) {
 }
 
 function phaseOf(state, candidates) {
+  const buildingRemaining = candidates.filter(t => t.kind === 'building').length;
+  if (state.planner?.stage !== 'routes') {
+    return {
+      id: 'building_positions',
+      label: buildingRemaining ? '建物位置を測定中' : '建物位置の測定完了',
+      allowed: new Set(['building']),
+    };
+  }
   const controls = candidates.filter(t => t.kind === 'control').length;
   // 基準点を優先しつつ、利用者が既に未確認建物の前にいる場合はその場の情報を先に採る。
   // 遠い基準点へ移動させて現在地の貴重なGPS機会を捨てない。
   if (controls) return { id: 'anchors', label: '近くの場所から確認', allowed: new Set(['control', 'building']) };
   const pathRemaining = candidates.filter(t => t.kind === 'path').length;
-  const buildingRemaining = candidates.filter(t => t.kind === 'building').length;
   if (pathRemaining > fl.navEdges.length * 0.7) return { id: 'backbone', label: '主要通路を測定中', allowed: new Set(['path', 'building']) };
   if (buildingRemaining) return { id: 'semantic', label: '名称・入口を確認中', allowed: new Set(['path', 'building']) };
   if (pathRemaining) return { id: 'closure', label: '往復・再測定中', allowed: new Set(['path']) };

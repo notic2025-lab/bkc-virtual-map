@@ -31,5 +31,5 @@ export const SURVEY = {
   // [{ id:'T1', startedAt, endedAt, samples:[{ lat, lng, accuracy, timestamp }] }]
   tracks: [],
   // 調査プランナーの後回し・履歴・時間設定（測量端末間の引継ぎ用）
-  planner: { skipped: {}, history: [], budgetMin: 30 },
+  planner: { skipped: {}, history: [], budgetMin: 30, stage: 'buildings' },
 };
